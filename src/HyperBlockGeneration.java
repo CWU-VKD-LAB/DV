@@ -123,6 +123,7 @@ public class HyperBlockGeneration
         // generate hyperblocks, and print hyperblock info
         getData();
         generateHBs(true);
+        removeUselessAttributes();
         HB_analytics();
 
         // visualize hyperblocks
@@ -248,6 +249,75 @@ public class HyperBlockGeneration
         System.out.println("DONE!!!!");
     }
 
+    private void removeUselessAttributes()
+    {
+
+        // Go through all hyperblocks
+        for(int i = 0; i < hyper_blocks.size(); i++){
+            HyperBlock tempBlock = hyper_blocks.get(i);
+
+            if (tempBlock.size == 1)
+                continue;
+
+            int classNum = tempBlock.classNum;
+            double[] mins = Arrays.copyOf(tempBlock.minimums.get(0), tempBlock.minimums.get(0).length);
+            double[] maxes = Arrays.copyOf(tempBlock.maximums.get(0), tempBlock.maximums.get(0).length);
+
+
+            // removed represents one particular attribute which we want to try and remove
+            for (int removed = 0; removed < maxes.length; removed++){
+
+                System.out.println("We are trying to remove attribute " + removed + " from hyperblock " + i + " which belongs to class " + tempBlock.classNum);
+                boolean someoneInBounds = false;
+
+                // iterating through all the OTHER classes, k representing a particular class number
+                for(int k = 0; k < data.size(); k++){
+                    // Skip going through data of same class as hyperblock
+
+                    if(classNum == k){
+                        continue;
+                    }
+
+                    // classNum of a hyperblock corresponds to index that data exists at in data. so data .get(classNum) to see all data from that class.
+                    // Go through each point in the class
+
+                    for(double[] point : data.get(k).data){
+                        //System.out.println(Arrays.toString(point));
+
+                        // check if the point is within ALL bounds of our hyperblock, except for the attribute we are looking at now
+                        boolean inAllBounds = true;
+                        for(int p_values = 0; p_values < point.length; p_values++){
+                            // Skip the attribute we are trying to remove
+                            if(p_values == removed){
+                                continue;
+                            }
+                            // Check if p_value is less than max and greater than min for current range
+                            if (point[p_values] < mins[p_values] || point[p_values] > maxes[p_values]){
+                                inAllBounds = false;
+                                break;
+                            }
+                        }
+                        if (inAllBounds){
+                            someoneInBounds = true;
+                            break;
+                        }
+                    }
+
+                }
+
+                // if nobody falls into our bounds, we can safely remove now.
+                if(!someoneInBounds){
+                    System.out.println("Removed : " + removed + " from: " + i);
+                    // Update the maxes/mins to allow all range [0, 1] aka removing attribute
+                    maxes[removed] = 1;
+                    mins[removed] = 0;
+                }
+            }
+            tempBlock.minimums.set(0, Arrays.copyOf(mins, mins.length));
+            tempBlock.maximums.set(0, Arrays.copyOf(maxes, maxes.length));
+        }
+    }
+
 
     /**
      * Create hyperblocks using Interval Merger Hyper or Hyperblock Rules Linear
@@ -362,7 +432,6 @@ public class HyperBlockGeneration
 
             // order blocks from biggest to smallest by class
             order_hbs_by_class();
-
             // temp function removes all, but the largest HB in each class
             //order_hbs_by_size();
         }
@@ -3383,7 +3452,8 @@ public class HyperBlockGeneration
 
         // Load the kernel
         CUmodule module1 = new CUmodule();
-        cuModuleLoad(module1, "D:\\GitHub\\DV\\src\\MergerHyperKernels.ptx");
+        //TODO: Change this to not requre the user to change the code
+        cuModuleLoad(module1, ".\\src\\MergerHyperKernels.ptx");
         CUfunction mergerHelper1 = new CUfunction();
         cuModuleGetFunction(mergerHelper1, module1, "MergerHelper1");
 
@@ -3412,7 +3482,6 @@ public class HyperBlockGeneration
 
         boolean actionTaken = false;
         int cnt = merging_hbs.size();
-
 
         int time_cnt = 0;
         int total_time = 0;
