@@ -106,9 +106,6 @@ public class HyperBlockGeneration
     // colors
     Color[] graphColors;
 
-
-
-
     boolean remove_extra = false;
 
 
@@ -123,7 +120,6 @@ public class HyperBlockGeneration
         // generate hyperblocks, and print hyperblock info
         getData();
         generateHBs(true);
-        removeUselessAttributes();
         HB_analytics();
 
         // visualize hyperblocks
@@ -256,8 +252,6 @@ public class HyperBlockGeneration
         for(int i = 0; i < hyper_blocks.size(); i++){
             HyperBlock tempBlock = hyper_blocks.get(i);
 
-            if (tempBlock.size == 1)
-                continue;
 
             int classNum = tempBlock.classNum;
             double[] mins = Arrays.copyOf(tempBlock.minimums.get(0), tempBlock.minimums.get(0).length);
@@ -267,7 +261,7 @@ public class HyperBlockGeneration
             // removed represents one particular attribute which we want to try and remove
             for (int removed = 0; removed < maxes.length; removed++){
 
-                System.out.println("We are trying to remove attribute " + removed + " from hyperblock " + i + " which belongs to class " + tempBlock.classNum);
+                //System.out.println("We are trying to remove attribute " + removed + " from hyperblock " + i + " which belongs to class " + tempBlock.classNum);
                 boolean someoneInBounds = false;
 
                 // iterating through all the OTHER classes, k representing a particular class number
@@ -307,7 +301,7 @@ public class HyperBlockGeneration
 
                 // if nobody falls into our bounds, we can safely remove now.
                 if(!someoneInBounds){
-                    System.out.println("Removed : " + removed + " from: " + i);
+                    //System.out.println("Removed : " + removed + " from: " + i);
                     // Update the maxes/mins to allow all range [0, 1] aka removing attribute
                     maxes[removed] = 1;
                     mins[removed] = 0;
@@ -1601,6 +1595,14 @@ public class HyperBlockGeneration
         toolBar.addSeparator();
         toolBar.addSeparator();
         toolBar.addSeparator();
+
+        // Simplify by removing attributes
+        JButton removeUselessBtn = new JButton("Simplify Blocks");
+        toolBar.add(removeUselessBtn);
+        removeUselessBtn.addActionListener(e -> {
+            removeUselessAttributes();
+            HB_analytics();
+        });
 
         // HB level
         JLabel lvlView = new JLabel("HB Level: ");
