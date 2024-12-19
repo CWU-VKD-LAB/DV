@@ -1986,21 +1986,39 @@ public class HyperBlockGeneration
         graphPanel.repaint();
     }
 
+    /**
+     * Prints the rules for the hyper-block.
+     * @param block The int index of the hyper-block in the list hyper_blocks
+     * @return
+     */
     private String HB_desc(int block)
     {
         StringBuilder rule = new StringBuilder("<b>Rule:</b> if ");
+        HyperBlock tempB = hyper_blocks.get(block);
+
+        // Only print rules if it is not too long
         if (DV.fieldLength < 50)
         {
+            // Go through all the attributes.
             for (int i = 0; i < DV.fieldLength; i++)
             {
-                if (hyper_blocks.get(block).maximums.get(0)[i] > 0)
-                {
-                    rule.append(String.format("%.2f &le; X%d &le; %.2f", hyper_blocks.get(block).minimums.get(0)[i], i, hyper_blocks.get(block).maximums.get(0)[i]));
 
-                    if (i != DV.fieldLength - 1)
-                        rule.append(", ");
-                    else
-                        rule.append(", then class ").append(DV.uniqueClasses.get(hyper_blocks.get(block).classNum));
+
+                // Go through all allowed intervals for the attribute
+                for(int j = 0; j < tempB.maximums.get(i).size(); j++){
+                    if(tempB.maximums.get(i).get(j) > 0){
+                        // If multiple intervals appear
+                        if(j > 0){
+                            rule.append(" OR ");
+                        }
+
+                        rule.append(String.format("%.2f &le; X%d &le; %.2f", tempB.minimums.get(i).get(j), i, tempB.maximums.get(i).get(j)));
+
+                        if (i != DV.fieldLength - 1)
+                            rule.append(", ");
+                        else
+                            rule.append(", then class ").append(DV.uniqueClasses.get(tempB.classNum));
+                    }
                 }
             }
         }
@@ -2010,8 +2028,8 @@ public class HyperBlockGeneration
         }
 
         String desc = "<html><b>Block:</b> " + (block + 1) + "/" + hyper_blocks.size() + "<br/>";
-        desc += "<b>Class:</b> " + DV.uniqueClasses.get(hyper_blocks.get(block).classNum) + "<br/>";
-        desc += "<b>Datapoints:</b> " + hyper_blocks.get(block).size + " (" + misclassified.get(block) + " misclassified)" + "<br/>";
+        desc += "<b>Class:</b> " + DV.uniqueClasses.get(tempB.classNum) + "<br/>";
+        desc += "<b>Datapoints:</b> " + tempB.size + " (" + misclassified.get(block) + " misclassified)" + "<br/>";
         desc += "<b>Accuracy:</b> " + (Math.round(accuracy.get(block) * 10000) / 100.0) + "%<br/>";
         desc += rule;
         desc += "</html>";
@@ -2032,18 +2050,21 @@ public class HyperBlockGeneration
     }
 
 
+    //TODO:AUSTIN: Adjusted to NOT BREAK with new mins/max format, but needs to be reworked to work and display the whole block.
     /**
      * MAYBE ABSTRACT LOOPS TO ADD DATA LATER
      */
 
     /**
-     * Create a PC visualization for a single hyperblock
+     * Create a PC visualization for a single hyper-block
      * @param datum data to visualize
-     * @param visualized_block hyperblock to visualize
+     * @param visualized_block hyper-block to visualize
      * @return panel with PC visualization
      */
     private ChartPanel PC_HB(ArrayList<DataObject> datum, int visualized_block)
     {
+        HyperBlock tempBlock = hyper_blocks.get(visualized_block);
+
         // create main renderer and dataset
         XYLineAndShapeRenderer goodLineRenderer = new XYLineAndShapeRenderer(true, false);
         XYSeriesCollection goodGraphLines = new XYSeriesCollection();
@@ -2073,7 +2094,7 @@ public class HyperBlockGeneration
                 boolean within = false;
                 int within_block = 0;
 
-                for (int k = 0; k < hyper_blocks.get(visualized_block).hyper_block.size(); k++)
+                for (int k = 0; k < tempBlock.hyper_block.size(); k++)
                 {
                     if (inside_HB(visualized_block, k, datum.get(d).data[i]))
                     {
@@ -2085,7 +2106,7 @@ public class HyperBlockGeneration
                 // add points to lines
                 int off = 0;
                 for (int j = 0; j < DV.fieldLength; j++)
-                    if (remove_extra && hyper_blocks.get(visualized_block).minimums.get(0)[j] != 0.5 && hyper_blocks.get(visualized_block).maximums.get(0)[j] != 0.5)
+                    if (remove_extra && tempBlock.minimums.get(j).get(0) != 0.5 && tempBlock.maximums.get(j).get(0) != 0.5)
                     {
                         line.add(off, datum.get(d).data[i][j]);
                         off++;
@@ -2097,7 +2118,7 @@ public class HyperBlockGeneration
                 if (visualizeWithin.isSelected() && within)
                 {
                     // add series
-                    if (d == hyper_blocks.get(visualized_block).classNum)
+                    if (d == tempBlock.classNum)
                     {
                         goodGraphLines.addSeries(line);
                         goodLineRenderer.setSeriesPaint(lineCnt, graphColors[d]);
@@ -2126,12 +2147,12 @@ public class HyperBlockGeneration
         // populate average series
         for (int k = 0; k < average_case.get(visualized_block).size(); k++)
         {
-            if (hyper_blocks.get(visualized_block).hyper_block.get(k).size() > 1)
+            if (tempBlock.hyper_block.get(k).size() > 1)
             {
                 XYSeries line = new XYSeries(k, false, true);
                 int off = 0;
                 for (int i = 0; i < average_case.get(visualized_block).get(k).length; i++)
-                    if (remove_extra && hyper_blocks.get(visualized_block).minimums.get(0)[i] != 0.5 && hyper_blocks.get(visualized_block).maximums.get(0)[i] != 0.5)
+                    if (remove_extra && tempBlock.minimums.get(i).get(0) != 0.5 && tempBlock.maximums.get(i).get(0) != 0.5)
                     {
                         line.add(off, average_case.get(visualized_block).get(k)[i]);
                         off++;
@@ -2145,45 +2166,47 @@ public class HyperBlockGeneration
         }
 
         // add hyperblocks
-        for (int k = 0, offset = 0; k < hyper_blocks.get(visualized_block).hyper_block.size(); k++)
+        for (int k = 0, offset = 0; k < tempBlock.hyper_block.size(); k++)
         {
-            if (hyper_blocks.get(visualized_block).hyper_block.get(k).size() > 1)
+            if (tempBlock.hyper_block.get(k).size() > 1)
             {
                 XYSeries tmp1 = new XYSeries(k-offset, false, true);
                 XYSeries tmp2 = new XYSeries(k-offset, false, true);
                 int cnt = 0;
                 for (int j = 0; j < DV.fieldLength; j++)
                 {
-                    if (remove_extra && hyper_blocks.get(visualized_block).minimums.get(0)[j] != 0.5 && hyper_blocks.get(visualized_block).maximums.get(0)[j] != 0.5)
+                    if (remove_extra && tempBlock.minimums.get(j).get(0) != 0.5 && tempBlock.maximums.get(j).get(0) != 0.5)
                     {
-                        tmp1.add(cnt, hyper_blocks.get(visualized_block).minimums.get(k)[j]);
-                        tmp2.add(cnt, hyper_blocks.get(visualized_block).minimums.get(k)[j]);
+                        tmp1.add(cnt, tempBlock.minimums.get(j).get(0));
+                        tmp2.add(cnt, tempBlock.minimums.get(j).get(0));
                         cnt++;
                     }
                     else if (!remove_extra)
                     {
-                        tmp1.add(j, hyper_blocks.get(visualized_block).minimums.get(k)[j]);
-                        tmp2.add(j, hyper_blocks.get(visualized_block).minimums.get(k)[j]);
+                        tmp1.add(j, tempBlock.minimums.get(j).get(0));
+                        tmp2.add(j, tempBlock.minimums.get(j).get(0));
                     }
                 }
 
                 for (int j = DV.fieldLength - 1; j > -1; j--)
                 {
-                    if (remove_extra && hyper_blocks.get(visualized_block).minimums.get(0)[j] != 0.5 && hyper_blocks.get(visualized_block).maximums.get(0)[j] != 0.5)
+                    if (remove_extra && tempBlock.minimums.get(j).get(0) != 0.5 && tempBlock.maximums.get(j).get(0) != 0.5)
                     {
-                        tmp1.add(cnt, hyper_blocks.get(visualized_block).maximums.get(k)[j]);
-                        tmp2.add(cnt, hyper_blocks.get(visualized_block).maximums.get(k)[j]);
+                        tmp1.add(cnt, tempBlock.maximums.get(j).get(0));
+                        tmp2.add(cnt, tempBlock.maximums.get(j).get(0));
                         cnt--;
                     }
                     else if (!remove_extra)
                     {
-                        tmp1.add(j, hyper_blocks.get(visualized_block).maximums.get(k)[j]);
-                        tmp2.add(j, hyper_blocks.get(visualized_block).maximums.get(k)[j]);
+                        tmp1.add(j, tempBlock.maximums.get(j).get(0));
+                        tmp2.add(j, tempBlock.maximums.get(j).get(0));
                     }
                 }
 
-                tmp1.add(0, hyper_blocks.get(visualized_block).minimums.get(k)[0]);
-                tmp2.add(0, hyper_blocks.get(visualized_block).minimums.get(k)[0]);
+                // Hyperblock is always size 1, so k is always 0
+                // this will grab the first element in HB mins
+                tmp1.add(0, tempBlock.minimums.get(0).get(0));
+                tmp2.add(0, tempBlock.minimums.get(0).get(0));
 
                 pcBlockRenderer.setSeriesPaint(k-offset, Color.ORANGE);
                 pcBlockAreaRenderer.setSeriesPaint(k-offset, new Color(255, 200, 0, 20));
@@ -2198,7 +2221,7 @@ public class HyperBlockGeneration
 
         // create chart and plot
         JFreeChart pcChart = ChartsAndPlots.createChart(goodGraphLines, false);
-        XYPlot plot = ChartsAndPlots.createHBPlot(pcChart, graphColors[hyper_blocks.get(visualized_block).classNum]);
+        XYPlot plot = ChartsAndPlots.createHBPlot(pcChart, graphColors[tempBlock.classNum]);
         PC_DomainAndRange(plot);
 
         // set renderers and datasets
@@ -2217,6 +2240,8 @@ public class HyperBlockGeneration
         chartPanel.setMouseWheelEnabled(true);
         return chartPanel;
     }
+
+
 
     private JScrollPane PC_HBs(ArrayList<DataObject> data)
     {
