@@ -1,8 +1,12 @@
 import java.util.ArrayList;
+import java.util.List;
 
 public class HyperBlock
 {
-    // all hyperblocks
+    /*
+        Supposed to hold all hyper-blocks data seperated by the outer list. Instead, holds only 1.
+        ArrayList<double[]> should hold all datapoints in the block. ex {[x1,x2,x3], [x1,x2,x3]}
+     */
     ArrayList<ArrayList<double[]>> hyper_block;
 
     // class number of hyperblock
@@ -18,8 +22,8 @@ public class HyperBlock
     String attribute;
 
     // minimums and maximums for each feature in hyperblock
-    ArrayList<double[]> maximums;
-    ArrayList<double[]> minimums;
+    ArrayList<ArrayList<Double>> maximums;
+    ArrayList<ArrayList<Double>> minimums;
 
 
     /**
@@ -58,8 +62,9 @@ public class HyperBlock
      * @param max maximum bound for hyperblock
      * @param min minimum bound for hyperblock
      */
-    HyperBlock(double[] max, double[] min, int classNum)
+    HyperBlock(ArrayList<ArrayList<Double>> max, ArrayList<ArrayList<Double>> min, int classNum)
     {
+        //TODO:AUSTIN: Note we must now assume min and max are in new form
         setBounds(max, min);
         findData();
         this.classNum = classNum;
@@ -71,8 +76,9 @@ public class HyperBlock
      * @param max maximum bound for hyperblock
      * @param min minimum bound for hyperblock
      */
-    HyperBlock(double[] max, double[] min)
+    HyperBlock(ArrayList<ArrayList<Double>> max, ArrayList<ArrayList<Double>> min)
     {
+        //TODO:AUSTIN: Note we must now assume min and max are in new form
         setBounds(max, min);
         findData();
     }
@@ -83,42 +89,62 @@ public class HyperBlock
      * @param max maximum bound
      * @param min minimum bound
      */
-    private void setBounds(double[] max, double[] min)
+    private void setBounds(ArrayList<ArrayList<Double>> max, ArrayList<ArrayList<Double>> min)
     {
+        // Make the outer list for max then add the inner list elements.
         maximums = new ArrayList<>();
-        minimums = new ArrayList<>();
+        for (ArrayList<Double> innerList : max) {
+            maximums.add(new ArrayList<>(innerList));
+        }
 
-        maximums.add(max);
-        minimums.add(min);
+        minimums = new ArrayList<>();
+        for (ArrayList<Double> innerList : min) {
+            minimums.add(new ArrayList<>(innerList));
+        }
     }
 
-
+    //TODO:AUSTIN:COMPLETEITHINK
     /**
      * Finds all data within a hyperblock
      */
     private void findData()
     {
+        // The datapoints
         ArrayList<ArrayList<double[]>> dps = new ArrayList<>();
         ArrayList<double[]> classPnts = new ArrayList<>();
+
+        // Go through each class in the dataset.
         for (int i = 0; i < DV.trainData.size(); i++)
         {
+            // Go through data point in the class of the dataset
             for (int j = 0; j < DV.trainData.get(i).data.length; j++)
             {
-                for (int q = 0; q < maximums.size(); q++)
+                boolean inside = true;
+                // Go through all the attributes mins/maxes
+                for (int k = 0; k < maximums.size(); k++)
                 {
-                    boolean inside = true;
-                    for (int k = 0; k < DV.fieldLength; k++)
-                    {
-                        if (DV.trainData.get(i).data[j][k] > maximums.get(q)[k] || DV.trainData.get(i).data[j][k] < minimums.get(q)[k])
-                        {
-                            inside = false;
+                    boolean inAnyInterval = false;
+
+                    // Check all intervals for the current attribute
+                    for (int g = 0; g < maximums.get(k).size(); g++) {
+                        double value = DV.trainData.get(i).data[j][k];
+
+                        // Check if the value is within the interval
+                        if (value >= minimums.get(k).get(g) && value <= maximums.get(k).get(g)) {
+                            inAnyInterval = true;
                             break;
                         }
                     }
 
-                    if (inside)
-                        classPnts.add(DV.trainData.get(i).data[j]);
+                    if(!inAnyInterval){
+                        inside = false;
+                        break;
+                    }
+
                 }
+                if (inside)
+                    classPnts.add(DV.trainData.get(i).data[j]);
+
             }
         }
 
@@ -126,9 +152,9 @@ public class HyperBlock
         hyper_block = dps;
     }
 
-
+    //TODO:AUSTIN:COMPLETEITHINK
     /**
-     * Gets minimums and maximums of a hyperblock
+     * Gets minimums and maximums of a hyper-block
      */
     public void findBounds()
     {
@@ -136,28 +162,25 @@ public class HyperBlock
         maximums.clear();
         minimums.clear();
 
-        for (int h = 0; h < hyper_block.size(); h++)
-        {
-            maximums.add(new double[DV.fieldLength]);
-            minimums.add(new double[DV.fieldLength]);
-
-            for (int i = 0; i < DV.fieldLength; i++)
-            {
-                maximums.get(h)[i] = -Double.MIN_VALUE;
-                minimums.get(h)[i] = Double.MAX_VALUE;
-            }
-
-            for (double[] dbs : hyper_block.get(h))
-            {
-                for (int j = 0; j < DV.fieldLength; j++)
-                {
-                    maximums.get(h)[j] = Math.max(maximums.get(h)[j], dbs[j]);
-                    minimums.get(h)[j] = Math.min(minimums.get(h)[j], dbs[j]);
-                }
-            }
-
-
-            size += hyper_block.get(h).size();
+        // Initialize the maximums and minimums with one interval for each attribute
+        for (int g = 0; g < DV.fieldLength; g++) {
+            maximums.add(new ArrayList<>(List.of(Double.NEGATIVE_INFINITY)));
+            minimums.add(new ArrayList<>(List.of(Double.POSITIVE_INFINITY)));
         }
+
+        // Go through all the points in the hyperblock
+        for (double[] dbs : hyper_block.get(0))
+        {
+            for (int j = 0; j < DV.fieldLength; j++)
+            {
+                // Update dimensional min or max if the value is < or >
+
+                maximums.get(j).set(0, Math.max(maximums.get(j).get(0), dbs[j]));
+                minimums.get(j).set(0, Math.min(minimums.get(j).get(0), dbs[j]));
+
+            }
+        }
+        size += hyper_block.get(0).size();
+
     }
 }
