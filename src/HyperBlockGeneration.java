@@ -128,7 +128,6 @@ public class HyperBlockGeneration
             HB_GUI();
             getPlot();
         }
-
         // k-fold
         /*ProcessBuilder lda = new ProcessBuilder("cmd", "/c",
                 "python",
@@ -243,6 +242,147 @@ public class HyperBlockGeneration
         }
 
         System.out.println("DONE!!!!");
+    }
+
+    /*
+        Basically, we do nested for loop through the hyper_blocks.
+
+        We will check if one block fully envelopes the other, if it doesn't we have to check case by
+
+     */
+    private void simplifyHBtoDisjunctiveForm(){
+        Set<Integer> blocksToBeRemoved = new HashSet<>();
+        // Go through each hyperblock
+        for(int i = 0; i < hyper_blocks.size(); i++){
+            HyperBlock outerBlock = hyper_blocks.get(i);
+            for(int j = 0; j < hyper_blocks.size(); j++){
+                // Don't compare a block to itself.
+                if(i == j){continue;}
+
+                if(blocksToBeRemoved.contains(i) || blocksToBeRemoved.contains(j)){continue;}
+
+                // Get current inner block of same class
+                HyperBlock innerBlock = hyper_blocks.get(j);
+                if(outerBlock.classNum != innerBlock.classNum){
+                    continue;
+                }
+
+                // First we want to check if the outer block is completely surrounding inner block. If it is,
+                // we can remove the smaller block
+                boolean allInside = true;
+                for(int k = 0; k < DV.fieldLength; k++){
+                    if(outerBlock.minimums.get(0)[k] > innerBlock.minimums.get(0)[k] || outerBlock.maximums.get(0)[k] < innerBlock.maximums.get(0)[k]){
+                        allInside = false;
+                        break;
+                    }
+                }
+
+                if(allInside){
+                    // This means we can delete the smaller block. (How will this effect our looping tho?)
+                    blocksToBeRemoved.add(j);
+                }else{
+                    // Exhaustive search with updated intervals.
+                    System.out.println("Doing an exhaustive search:" + i + "j: " + j);
+                    ArrayList<double[]> mins = new ArrayList<>();
+                    ArrayList<double[]> maxes = new ArrayList<>();
+
+                    for(int k = 0; k < DV.fieldLength; k++){
+                        if (outerBlock.maximums.get(0)[k] < innerBlock.minimums.get(0)[k] || innerBlock.maximums.get(0)[k] < outerBlock.minimums.get(0)[k]) {
+                            // If not overlapping, we try to do an OR clause by taking both the inside and outside bounds. inside first.
+                            maxes.add(k, new double[]{innerBlock.maximums.get(0)[k], outerBlock.maximums.get(0)[k]});
+                            mins.add(k, new double[]{innerBlock.minimums.get(0)[k], outerBlock.minimums.get(0)[k]});
+                        }else{
+                            //TODO: THIS might battle with removeUselessAttributes. If so, make check to make sure not taking [0, 1]
+                            // If they are overlapping take MAX(maxes) MIN(mins)
+                            maxes.add(k, new double[]{(Math.max(outerBlock.maximums.get(0)[k], innerBlock.maximums.get(0)[k]))});
+                            mins.add(k, new double[]{(Math.min(outerBlock.minimums.get(0)[k], innerBlock.minimums.get(0)[k]))});
+                        }
+                    }
+
+                    // Go through all the data of other classes, check if it would fall into the new bounds of merged disjunctive block.
+                    int classNum = outerBlock.classNum;
+                    for(int k = 0; k < data.size(); k++) {
+                        if(classNum == k){continue;} //Skip data of same class
+                        boolean blockIsValid = true;
+
+                        for (double[] point : data.get(k).data) {
+                            System.out.println("Checking a point");
+                            boolean pointInBounds = true;
+
+                            for(int p_value = 0; p_value < point.length; p_value++){
+                                boolean dimOutOfBounds = true;
+
+                                // Make sure attribute is outside ALL OR's
+                                for(int n = 0; n < maxes.get(p_value).length; n++){
+                                    double min = mins.get(p_value)[n];
+                                    double max = maxes.get(p_value)[n];
+
+                                    // Check if point falls into the interval
+                                    if(point[p_value] >= min && point[p_value] <= max){
+                                        dimOutOfBounds = false;
+                                        break;
+                                    }
+                                }
+
+                                if(dimOutOfBounds){
+                                    pointInBounds = false;
+                                    break;
+                                }
+                            }
+
+                            // If the point is in the bounds.
+                            if(pointInBounds){
+                                blockIsValid = false;
+                                break;
+                            }
+                        }
+
+                        if(blockIsValid){
+                            //TODO: expand this to work with more than two options for the interval ranges
+                            // Update the outer block to have the OR bounds
+                            outerBlock.minimums = new ArrayList<>();
+                            outerBlock.maximums = new ArrayList<>();
+
+                            double[] mins1 = new double[DV.fieldLength];
+                            double[] mins2 = new double[DV.fieldLength];
+                            double[] maxes1 = new double[DV.fieldLength];
+                            double[] maxes2 = new double[DV.fieldLength];
+
+                            for(int m = 0; m < mins.size(); m++){
+                               double[] mins_int = mins.get(m);
+                               double[] maxes_int = maxes.get(m);
+
+                               if(mins_int.length > 1){
+                                   mins1[m] = mins_int[0];
+                                   mins2[m] = mins_int[1];
+
+                                   maxes1[m] = maxes_int[0];
+                                   maxes2[m] = maxes_int[1];
+                               }
+                            }
+
+                            outerBlock.minimums.add(Arrays.copyOf(mins1, mins1.length));
+                            outerBlock.minimums.add(Arrays.copyOf(mins2, mins2.length));
+
+                            outerBlock.maximums.add(Arrays.copyOf(maxes1, maxes1.length));
+                            outerBlock.maximums.add(Arrays.copyOf(maxes2, maxes2.length));
+
+
+                            // Delete the innerBlock.
+                            blocksToBeRemoved.add(j);
+                            System.out.println("Block: " + j + "Removed because of block: " + i);
+                        }
+                    }
+                }
+            }
+        }
+
+        List<Integer> sortedBlocksToBeRemoved = new ArrayList<>(blocksToBeRemoved);
+        sortedBlocksToBeRemoved.sort(Collections.reverseOrder());
+        for(int i : sortedBlocksToBeRemoved){
+            hyper_blocks.remove(i);
+        }
+
     }
 
     private void removeUselessAttributes()
@@ -1602,6 +1742,7 @@ public class HyperBlockGeneration
         removeUselessBtn.addActionListener(e -> {
             removeUselessAttributes();
             HB_analytics();
+            updateGraphs();
         });
 
         // HB level
