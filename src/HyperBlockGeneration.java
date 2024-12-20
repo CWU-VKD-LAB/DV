@@ -3178,33 +3178,22 @@ public class HyperBlockGeneration
                 boolean classified = false;
                 totalCases++;
 
-                for (HyperBlock hyperBlock : hyper_blocks)
+                for (int hbIndex = 0; hbIndex < hyper_blocks.size(); hbIndex++)
                 {
-                    for (int q = 0; q < hyperBlock.hyper_block.size(); q++)
+                    // Check if the current point is within the current hyper-block
+                    boolean inside = inside_HB(hbIndex, -999, DV.testData.get(i).data[j]);
+
+                    if (inside)
                     {
-                        boolean inside = true;
-                        for (int k = 0; k < DV.fieldLength; k++)
-                        {
-                            if (DV.testData.get(i).data[j][k] > hyperBlock.maximums.get(q)[k] ||
-                                    DV.testData.get(i).data[j][k] < hyperBlock.minimums.get(q)[k])
-                            {
-                                inside = false;
-                                break;
-                            }
-                        }
+                        classified = true;
 
-                        if (inside)
+                        if (i == hyper_blocks.get(hbIndex).classNum)
+                            good++;
+                        else
                         {
-                            classified = true;
-
-                            if (i == hyperBlock.classNum)
-                                good++;
-                            else
-                            {
-                                bad++;
-                                bad_cases.add(DV.testData.get(i).data[j]);
-                                bad_cases_classes.add(i);
-                            }
+                            bad++;
+                            bad_cases.add(DV.testData.get(i).data[j]);
+                            bad_cases_classes.add(i);
                         }
                     }
                 }
