@@ -144,23 +144,35 @@ public class HyperBlockVisualization
 
     private String block_desc(int block)
     {
+        HyperBlock tempBlock = hyper_blocks.get(block);
+
         StringBuilder tmp = new StringBuilder("<b>Rule:</b> if ");
         if (DV.fieldLength < 50)
         {
+            // Go through all attributes
             for (int i = 0; i < DV.fieldLength; i++)
             {
-                if (hyper_blocks.get(block).maximums.get(0)[i] > 0)
-                {
-                    if (hyper_blocks.get(block).minimums.get(0)[i] > 0)
-                        tmp.append(String.format("%.2f &le; X%d &le; %.2f", hyper_blocks.get(block).minimums.get(0)[i], i, hyper_blocks.get(block).maximums.get(0)[i]));
-                    else
-                        tmp.append(String.format("X%d &le; %.2f", i, hyper_blocks.get(block).maximums.get(0)[i]));
+                // Go through all the intervals on the current attribute
+                for(int j = 0; j < tempBlock.maximums.get(i).size(); j++){
+                    if (tempBlock.maximums.get(i).get(j) > 0)
+                    {
+                        if(j > 0){
+                            tmp.append(" OR ");
+                        }
 
-                    if (i != DV.fieldLength - 1)
-                        tmp.append(", ");
-                    else
-                        tmp.append(", then class").append(hyper_blocks.get(block).className);
+                        // If min is 0 we will just print the max
+                        if (tempBlock.minimums.get(i).get(j) > 0)
+                            tmp.append(String.format("%.2f &le; X%d &le; %.2f", tempBlock.minimums.get(i).get(j), i, tempBlock.maximums.get(i).get(j)));
+                        else
+                            tmp.append(String.format("X%d &le; %.2f", i, tempBlock.maximums.get(i).get(j)));
+
+                    }
                 }
+
+                if (i != DV.fieldLength - 1)
+                    tmp.append(", ");
+                else
+                    tmp.append(", then class").append(tempBlock.className);
             }
         }
         else
@@ -169,9 +181,9 @@ public class HyperBlockVisualization
         }
 
         String desc = "<html><b>Block:</b> " + (block + 1) + "/" + hyper_blocks.size() + "<br/>";
-        desc += "<b>Class:</b> " + hyper_blocks.get(block).className + "<br/>";
-        desc += "<b>Seed Attribute:</b> " + hyper_blocks.get(block).attribute+ "<br/>";
-        desc += "<b>Datapoints:</b> " + hyper_blocks.get(block).size + " (" + misclassified.get(block) + " misclassified)" + "<br/>";
+        desc += "<b>Class:</b> " + tempBlock.className + "<br/>";
+        desc += "<b>Seed Attribute:</b> " + tempBlock.attribute+ "<br/>";
+        desc += "<b>Datapoints:</b> " + tempBlock.size + " (" + misclassified.get(block) + " misclassified)" + "<br/>";
         desc += "<b>Accuracy:</b> " + (Math.round(acc.get(block) * 10000) / 100.0) + "%<br/>";
         desc += tmp;
         desc += "</html>";
