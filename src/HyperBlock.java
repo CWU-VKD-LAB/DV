@@ -25,7 +25,6 @@ public class HyperBlock
     ArrayList<ArrayList<Double>> maximums;
     ArrayList<ArrayList<Double>> minimums;
 
-
     /**
      * Constructor for HyperBlock
      * @param hyper_block datapoints to go in hyperblock
@@ -64,7 +63,6 @@ public class HyperBlock
      */
     HyperBlock(ArrayList<ArrayList<Double>> max, ArrayList<ArrayList<Double>> min, int classNum)
     {
-        //TODO:AUSTIN: Note we must now assume min and max are in new form
         setBounds(max, min);
         findData();
         this.classNum = classNum;
@@ -78,7 +76,6 @@ public class HyperBlock
      */
     HyperBlock(ArrayList<ArrayList<Double>> max, ArrayList<ArrayList<Double>> min)
     {
-        //TODO:AUSTIN: Note we must now assume min and max are in new form
         setBounds(max, min);
         findData();
     }
@@ -103,7 +100,6 @@ public class HyperBlock
         }
     }
 
-    //TODO:AUSTIN:COMPLETEITHINK
     /**
      * Finds all data within a hyperblock
      */
@@ -113,21 +109,22 @@ public class HyperBlock
         ArrayList<ArrayList<double[]>> dps = new ArrayList<>();
         ArrayList<double[]> classPnts = new ArrayList<>();
 
+
         // Go through each class in the dataset.
         for (int i = 0; i < DV.trainData.size(); i++)
         {
             // Go through data point in the class of the dataset
-            for (int j = 0; j < DV.trainData.get(i).data.length; j++)
+            for (double[] point : DV.trainData.get(i).data)
             {
                 boolean inside = true;
+                //System.out.println(Arrays.toString(point));
                 // Go through all the attributes mins/maxes
-                for (int k = 0; k < maximums.size(); k++)
+                for (int k = 0; k < DV.fieldLength; k++)
                 {
                     boolean inAnyInterval = false;
-
+                    double value = point[k];
                     // Check all intervals for the current attribute
                     for (int g = 0; g < maximums.get(k).size(); g++) {
-                        double value = DV.trainData.get(i).data[j][k];
 
                         // Check if the value is within the interval
                         if (value >= minimums.get(k).get(g) && value <= maximums.get(k).get(g)) {
@@ -136,15 +133,16 @@ public class HyperBlock
                         }
                     }
 
+                    // If it's not in any interval for one of the attributes it isnt in the block
                     if(!inAnyInterval){
                         inside = false;
                         break;
                     }
-
                 }
-                if (inside)
-                    classPnts.add(DV.trainData.get(i).data[j]);
 
+                if (inside){
+                    classPnts.add(point);
+                }
             }
         }
 
@@ -152,9 +150,10 @@ public class HyperBlock
         hyper_block = dps;
     }
 
-    //TODO:AUSTIN:COMPLETEITHINK
     /**
      * Gets minimums and maximums of a hyper-block
+     *
+     * Assumes non-disjunctive blocks for now.
      */
     public void findBounds()
     {
@@ -174,13 +173,12 @@ public class HyperBlock
             for (int j = 0; j < DV.fieldLength; j++)
             {
                 // Update dimensional min or max if the value is < or >
-
                 maximums.get(j).set(0, Math.max(maximums.get(j).get(0), dbs[j]));
                 minimums.get(j).set(0, Math.min(minimums.get(j).get(0), dbs[j]));
 
             }
         }
+        // From old version, don't want to try removing rn
         size += hyper_block.get(0).size();
-
     }
 }

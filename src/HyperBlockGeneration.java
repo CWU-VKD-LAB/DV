@@ -129,121 +129,11 @@ public class HyperBlockGeneration
             HB_GUI();
             getPlot();
         }
-        // k-fold
-        /*ProcessBuilder lda = new ProcessBuilder("cmd", "/c",
-                "python",
-                "source\\Python\\code_and_pyinstaller_spec\\kFoldSplit.py",
-                "source\\Python\\train_data.csv",
-                "source\\Python\\test_data.csv");
 
-        try
-        {
-            // create file for python process
-            CSV.createCSVDataObject(DV.trainData, "source\\Python\\train_data.csv");
-            CSV.createCSVDataObject(DV.testData, "source\\Python\\test_data.csv");
-
-            // run python (LDA) process
-            Process process = lda.start();
-
-            // read python outputs
-            BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
-            String output;
-
-            while ((output = reader.readLine()) != null)
-            {
-                // update angles
-                System.out.println(output);
-            }
-
-            // delete created file
-            File fileToDelete = new File("source\\Python\\train_data.csv");
-            File fileToDelete2 = new File("source\\Python\\test_data.csv");
-            Files.deleteIfExists(fileToDelete.toPath());
-            Files.deleteIfExists(fileToDelete2.toPath());
-        }
-        catch (Exception e)
-        {
-            throw new RuntimeException(e);
-        }*/
-
+        // k-fold used to be here
         test_HBs();
-
-
-        // get average case
-        /*for (int i = 0; i < average_case.size(); i++)
-        {
-            //for (int j = 0; j < average_case.get(0); j++)
-            //{
-                double[] input = new double[DV.fieldLength];
-                //for (int j = 0; j < average_case.get(i).get(0).length; j++)
-                    //input[j] = average_case.get(i).get(0)[j];// * (DataSetup.maxValues[j] - DataSetup.minValues[j]) + DataSetup.minValues[j];
-
-
-                double[] best = DV.trainData.get(0).data[0];
-                double best_dist = Double.MAX_VALUE;
-
-                for (int d = 0; d < DV.trainData.size(); d++)
-                {
-                    for (int b = 0; b < DV.trainData.get(d).data.length; b++)
-                    {
-                        double new_dist = euclidean_distance(average_case.get(i).get(0), DV.trainData.get(d).data[b]);
-                        if (new_dist < best_dist)
-                        {
-                            best = DV.trainData.get(d).data[b];
-                            best_dist = euclidean_distance(average_case.get(i).get(0), DV.trainData.get(d).data[b]);
-                        }
-                    }
-                }
-
-                input = best;
-                for (int j = 0; j < average_case.get(i).get(0).length; j++)
-                    input[j] = input[j] * (DataSetup.maxValues[j] - DataSetup.minValues[j]) + DataSetup.minValues[j];
-
-
-                // Create a BufferedImage
-                BufferedImage image = new BufferedImage(28, 28, BufferedImage.TYPE_BYTE_GRAY);
-
-                // Fill the BufferedImage with the input data
-                for (int y = 0; y < 28; y++) {
-                    for (int x = 0; x < 28; x++) {
-                        int index = y * 28 + x;
-                        int value = (int) (input[index] * 255); // Assuming input values are normalized between 0 and 1
-                        int rgb = (value << 16) | (value << 8) | value; // Convert to grayscale
-                        image.setRGB(x, y, rgb);
-                    }
-                }
-
-                // Save the BufferedImage to a file
-                try {
-                    ImageIO.write(image, "png", new File("D:\\Downloads\\image_" + DV.uniqueClasses.get(hyper_blocks.get(i).classNum) + ".png"));
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-            //}
-        }*/
     }
 
-
-    HyperBlockGeneration(File filePath)
-    {
-        // set purity threshold
-        if (explain_ldf)
-            acc_threshold = DV.accuracy;
-
-        // open file and read lines
-        getData();
-        hyper_blocks = DataSetup.setupHyperblockData(filePath);
-        HB_analytics();
-
-        // visualize hyperblocks
-        if (!hyper_blocks.isEmpty())
-        {
-            HB_GUI();
-            getPlot();
-        }
-
-        System.out.println("DONE!!!!");
-    }
 
     /*
         Basically, we do nested for loop through the hyper_blocks.
@@ -403,6 +293,7 @@ public class HyperBlockGeneration
                     // Go through each point in the class
 
                     for(double[] point : data.get(k).data){
+
                         //TODO:AUSTIN Copy over the inside_HB logic instead of old.
                         // check if the point is within ALL bounds of our hyperblock, except for the attribute we are looking at now
                         boolean inAllBounds = true;
@@ -430,7 +321,7 @@ public class HyperBlockGeneration
                     //System.out.println("Removed : " + removed + " from: " + i);
                     // Update the maxes/mins to allow all range [0, 1] aka removing attribute
                     maxes.get(removed).set(0, 1.0);
-                    mins.get(removed).set(1, 1.0);
+                    mins.get(removed).set(0, 0.0);
 
                 }
             }
@@ -621,7 +512,7 @@ public class HyperBlockGeneration
      */
     private ArrayList<DataATTR> interval_hyper(ExecutorService executorService, ArrayList<ArrayList<DataATTR>> data_by_attr, double acc_threshold, ArrayList<HyperBlock> existing_hb) throws ExecutionException, InterruptedException
     {
-                // future intervals
+        // future intervals
         List<Future<int[]>> intervals = new ArrayList<>();
         int attr = -1;
         int[] best = {-1, -1, -1};
@@ -868,14 +759,10 @@ public class HyperBlockGeneration
         // or the interval minimum must be above all existing hyperblock maximums
         for (HyperBlock hb : existing_hb)
         {
-            //TODO:AUSTIN: Isn't this just going through itself each time!!!!!!!!!!!!
-            for (int j = 0; j < hb.hyper_block.size(); j++)
+            // if not unique, then return false
+            if (!(intv_max < hb.minimums.get(attr).get(0) || intv_min > hb.maximums.get(attr).get(0)))
             {
-                // if not unique, then return false
-                if (!(intv_max < hb.minimums.get(attr).get(0) || intv_min > hb.maximums.get(attr).get(0)))
-                {
-                    return false;
-                }
+                return false;
             }
         }
 
@@ -902,16 +789,12 @@ public class HyperBlockGeneration
             double[] mins = new double[DV.fieldLength];
             double[] maxes = new double[DV.fieldLength];
 
-            for(int i = 0; i < hyperBlock.maximums.size(); i++){
+            for(int i = 0; i < DV.fieldLength; i++){
                 mins[i] = hyperBlock.minimums.get(i).get(0);
-                maxes[i] = hyperBlock.minimums.get(i).get(0);
+                maxes[i] = hyperBlock.maximums.get(i).get(0);
             }
 
             merging_hbs.add(new HollowBlock(Arrays.copyOf(maxes, maxes.length), Arrays.copyOf(mins, mins.length), hyperBlock.classNum));
-            /*
-            for (int j = 0; j < hyperBlock.hyper_block.size(); j++)
-                merging_hbs.add(new HollowBlock(hyperBlock.maximums.get(j), hyperBlock.minimums.get(j), hyperBlock.classNum));
-             */
         }
 
         hyper_blocks.clear();
@@ -2180,6 +2063,7 @@ public class HyperBlockGeneration
             }
         }
 
+        //TODO:AUSTIN: REMOVE THE USELESS K LOOPS THROUGHOUT HERE !!!
         // add hyperblocks
         for (int k = 0, offset = 0; k < tempBlock.hyper_block.size(); k++)
         {
@@ -3078,7 +2962,9 @@ public class HyperBlockGeneration
      */
     private boolean inside_HB(int hb1, int hb2, double[] data)
     {
+        //NOTE: 99% sure hb2 is ALWAYS 0.
         HyperBlock tempBlock = hyper_blocks.get(hb1);
+
         boolean inside = true;
 
         // Go through all attributes
@@ -3646,12 +3532,6 @@ public class HyperBlockGeneration
         CUfunction mergerHelper1 = new CUfunction();
         cuModuleGetFunction(mergerHelper1, module1, "MergerHelper1");
 
-        /*CUmodule module2 = new CUmodule();
-        cuModuleLoad(module2, "D:\\GitHub\\DV\\src\\MergerHyperKernels.ptx");
-        CUfunction mergerHelper2 = new CUfunction();
-        cuModuleGetFunction(mergerHelper2, module2, "MergerHelper2");*/
-
-
         // create hollow blocks from hyperblocks
         ArrayList<HollowBlock> merging_hbs = new ArrayList<>();
         for (HyperBlock hyperBlock : hyper_blocks)
@@ -3661,14 +3541,10 @@ public class HyperBlockGeneration
 
             for(int i = 0; i < hyperBlock.maximums.size(); i++){
                 mins[i] = hyperBlock.minimums.get(i).get(0);
-                maxes[i] = hyperBlock.minimums.get(i).get(0);
+                maxes[i] = hyperBlock.maximums.get(i).get(0);
             }
 
             merging_hbs.add(new HollowBlock(Arrays.copyOf(maxes, maxes.length), Arrays.copyOf(mins, mins.length), hyperBlock.classNum));
-            /*
-            for (int j = 0; j < hyperBlock.hyper_block.size(); j++)
-                merging_hbs.add(new HollowBlock(hyperBlock.maximums.get(j), hyperBlock.minimums.get(j), hyperBlock.classNum));
-             */
         }
 
         hyper_blocks.clear();
