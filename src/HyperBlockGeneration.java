@@ -132,8 +132,24 @@ public class HyperBlockGeneration
 
         // k-fold used to be here
         test_HBs();
+        //clausesBeforeAfterSimplifications();
     }
 
+    /**
+     * Prints number of clauses before and after removal of useless attributes.
+     */
+    private void clausesBeforeAfterSimplifications(){
+        System.out.println("\n\n ==================================================== \n");
+        printClauseNumbers();
+
+        System.out.println("AFTER SIMPLIFICATION OF USELESS ATTRIBUTES \n\n ");
+        removeUselessAttributes();
+        printClauseNumbers();
+        System.out.println("\n\n ==================================================== \n");
+
+        // Recall so number datapoints in each block is recalculated correctly.
+        HB_analytics();
+    }
 
     /*
         Basically, we do nested for loop through the hyper_blocks.
@@ -1902,6 +1918,10 @@ public class HyperBlockGeneration
             // Go through all the attributes.
             for (int i = 0; i < DV.fieldLength; i++)
             {
+                if(tempB.maximums.get(i).get(0) == 1 && tempB.minimums.get(i).get(0) == 0){
+                    continue;
+                }
+
                 // Go through all allowed intervals for the attribute
                 for(int j = 0; j < tempB.maximums.get(i).size(); j++){
                     if(tempB.maximums.get(i).get(j) > 0){
@@ -1933,6 +1953,34 @@ public class HyperBlockGeneration
         desc += "</html>";
 
         return desc;
+    }
+
+    /**
+     * Sums how many clauses are needed to identify each class throughout all hyper_blocks.
+     * Prints num needed per class and num needed for the whole dataset.
+     */
+    private void printClauseNumbers(){
+        // array for keeping track of clauses for each class
+        int[] classCount = new int[DV.uniqueClasses.size()];
+        for(HyperBlock block : hyper_blocks){
+            for(int i = 0; i < DV.fieldLength; i++){
+                // Range (0,1) means it's a useless attribute that won't be printed
+                if(block.maximums.get(i).get(0) == 1 && block.minimums.get(i).get(0) == 0){
+                    continue;
+                }
+
+                // Loops through all intervals of the current attribute and counts it.
+                for(int j = 0; j < block.maximums.get(i).size(); j++){
+                    classCount[block.classNum]++;
+                }
+            }
+        }
+
+        // Print numbers gathered
+        for(int i = 0;  i < classCount.length; i++){
+            System.out.println("TOTAL CLAUSES FOR CLASS {" + DV.uniqueClasses.get(i) + "}  :  " + classCount[i]);
+        }
+        System.out.println("TOTAL CLAUSES    :  "   + Arrays.stream(classCount).sum());
     }
 
     private void updateGraphs()
@@ -2063,60 +2111,55 @@ public class HyperBlockGeneration
             }
         }
 
-        //TODO:AUSTIN: REMOVE THE USELESS K LOOPS THROUGHOUT HERE !!!
-        // add hyperblocks
-        for (int k = 0, offset = 0; k < tempBlock.hyper_block.size(); k++)
+        if (tempBlock.hyper_block.get(0).size() > 1)
         {
-            if (tempBlock.hyper_block.get(k).size() > 1)
+            XYSeries tmp1 = new XYSeries(0, false, true);
+            XYSeries tmp2 = new XYSeries(0, false, true);
+            int cnt = 0;
+            for (int j = 0; j < DV.fieldLength; j++)
             {
-                XYSeries tmp1 = new XYSeries(k-offset, false, true);
-                XYSeries tmp2 = new XYSeries(k-offset, false, true);
-                int cnt = 0;
-                for (int j = 0; j < DV.fieldLength; j++)
+                if (remove_extra && tempBlock.minimums.get(j).get(0) != 0.5 && tempBlock.maximums.get(j).get(0) != 0.5)
                 {
-                    if (remove_extra && tempBlock.minimums.get(j).get(0) != 0.5 && tempBlock.maximums.get(j).get(0) != 0.5)
-                    {
-                        tmp1.add(cnt, tempBlock.minimums.get(j).get(0));
-                        tmp2.add(cnt, tempBlock.minimums.get(j).get(0));
-                        cnt++;
-                    }
-                    else if (!remove_extra)
-                    {
-                        tmp1.add(j, tempBlock.minimums.get(j).get(0));
-                        tmp2.add(j, tempBlock.minimums.get(j).get(0));
-                    }
+                    tmp1.add(cnt, tempBlock.minimums.get(j).get(0));
+                    tmp2.add(cnt, tempBlock.minimums.get(j).get(0));
+                    cnt++;
                 }
-
-                for (int j = DV.fieldLength - 1; j > -1; j--)
+                else if (!remove_extra)
                 {
-                    if (remove_extra && tempBlock.minimums.get(j).get(0) != 0.5 && tempBlock.maximums.get(j).get(0) != 0.5)
-                    {
-                        tmp1.add(cnt, tempBlock.maximums.get(j).get(0));
-                        tmp2.add(cnt, tempBlock.maximums.get(j).get(0));
-                        cnt--;
-                    }
-                    else if (!remove_extra)
-                    {
-                        tmp1.add(j, tempBlock.maximums.get(j).get(0));
-                        tmp2.add(j, tempBlock.maximums.get(j).get(0));
-                    }
+                    tmp1.add(j, tempBlock.minimums.get(j).get(0));
+                    tmp2.add(j, tempBlock.minimums.get(j).get(0));
                 }
-
-                // Hyperblock is always size 1, so k is always 0
-                // this will grab the first element in HB mins
-                tmp1.add(0, tempBlock.minimums.get(0).get(0));
-                tmp2.add(0, tempBlock.minimums.get(0).get(0));
-
-                pcBlockRenderer.setSeriesPaint(k-offset, Color.ORANGE);
-                pcBlockAreaRenderer.setSeriesPaint(k-offset, new Color(255, 200, 0, 20));
-                pcBlockRenderer.setSeriesStroke(k, strokes[k]);
-
-                pcBlocks.addSeries(tmp1);
-                pcBlocksArea.addSeries(tmp2);
             }
-            else
-                offset++;
+
+            for (int j = DV.fieldLength - 1; j > -1; j--)
+            {
+                if (remove_extra && tempBlock.minimums.get(j).get(0) != 0.5 && tempBlock.maximums.get(j).get(0) != 0.5)
+                {
+                    tmp1.add(cnt, tempBlock.maximums.get(j).get(0));
+                    tmp2.add(cnt, tempBlock.maximums.get(j).get(0));
+                    cnt--;
+                }
+                else if (!remove_extra)
+                {
+                    tmp1.add(j, tempBlock.maximums.get(j).get(0));
+                    tmp2.add(j, tempBlock.maximums.get(j).get(0));
+                }
+            }
+
+            // Hyperblock is always size 1, so k is always 0
+            // this will grab the first element in HB mins
+            tmp1.add(0, tempBlock.minimums.get(0).get(0));
+            tmp2.add(0, tempBlock.minimums.get(0).get(0));
+
+            pcBlockRenderer.setSeriesPaint(0, Color.ORANGE);
+            pcBlockAreaRenderer.setSeriesPaint(0, new Color(255, 200, 0, 20));
+            pcBlockRenderer.setSeriesStroke(0, strokes[0]);
+
+            pcBlocks.addSeries(tmp1);
+            pcBlocksArea.addSeries(tmp2);
         }
+
+
 
         // create chart and plot
         JFreeChart pcChart = ChartsAndPlots.createChart(goodGraphLines, false);
@@ -2889,8 +2932,8 @@ public class HyperBlockGeneration
                 }
             }
 
-            System.out.println("\nBlock " + (h+1) + " Size: " + counter[h]);
-            System.out.println("Block " + (h+1) + " Accuracy: " + (maj_cnt / counter[h]));
+            //System.out.println("\nBlock " + (h+1) + " Size: " + counter[h]);
+            //System.out.println("Block " + (h+1) + " Accuracy: " + (maj_cnt / counter[h]));
 
             accuracy.add(maj_cnt / counter[h]);
             misclassified.add(counter[h] - (int) maj_cnt);
@@ -2924,7 +2967,7 @@ public class HyperBlockGeneration
                 bcnt += hyperBlock.hyper_block.get(q).size();
         }
 
-        System.out.println("TOTAL NUM IN BLOCKS: " + bcnt);
+        //System.out.println("TOTAL NUM IN BLOCKS: " + bcnt);
 
         for (int i = 0; i < DV.trainData.size(); i++)
         {
@@ -2948,8 +2991,8 @@ public class HyperBlockGeneration
             }
         }
 
-        System.out.println("NOT IN ANY BLOCKS: " + not_in + "\n");
-        System.out.println("Total Accuracy: " + (global_maj / global_cnt));
+        //System.out.println("NOT IN ANY BLOCKS: " + not_in + "\n");
+        //System.out.println("Total Accuracy: " + (global_maj / global_cnt));
     }
 
 
