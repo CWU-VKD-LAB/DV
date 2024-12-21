@@ -2027,6 +2027,7 @@ public class HyperBlockGeneration
         XYAreaRenderer pcBlockAreaRenderer = new XYAreaRenderer(XYAreaRenderer.AREA);
         XYSeriesCollection pcBlocksArea = new XYSeriesCollection();
 
+        //TODO:AUSTIN: Removed the old logic for the weird combined HB, but might be able to use this for disjunctive
         // create different strokes for each HB within a combined HB
         BasicStroke[] strokes = createStrokes(visualized_block);
 
@@ -2037,17 +2038,9 @@ public class HyperBlockGeneration
             {
                 // start line at (0, 0)
                 XYSeries line = new XYSeries(lineCnt, false, true);
-                boolean within = false;
-                int within_block = 0;
 
-                for (int k = 0; k < tempBlock.hyper_block.size(); k++)
-                {
-                    if (inside_HB(visualized_block, k, datum.get(d).data[i]))
-                    {
-                        within_block = k;
-                        within = true;
-                    }
-                }
+                // Might need to redo this to be similar to the old version when doing disjunctive blocks.
+                boolean within = inside_HB(visualized_block, 0, datum.get(d).data[i]);
 
                 // add points to lines
                 int off = 0;
@@ -2068,13 +2061,13 @@ public class HyperBlockGeneration
                     {
                         goodGraphLines.addSeries(line);
                         goodLineRenderer.setSeriesPaint(lineCnt, graphColors[d]);
-                        goodLineRenderer.setSeriesStroke(lineCnt, strokes[within_block]);
+                        goodLineRenderer.setSeriesStroke(lineCnt, strokes[0]);
                     }
                     else
                     {
                         badGraphLines.addSeries(line);
                         badLineRenderer.setSeriesPaint(lineCnt, graphColors[d]);
-                        badLineRenderer.setSeriesStroke(lineCnt, strokes[within_block]);
+                        badLineRenderer.setSeriesStroke(lineCnt, strokes[0]);
                     }
 
                     lineCnt++;
@@ -2084,7 +2077,7 @@ public class HyperBlockGeneration
                     // add series
                     goodGraphLines.addSeries(line);
                     goodLineRenderer.setSeriesPaint(lineCnt, graphColors[d]);
-                    goodLineRenderer.setSeriesStroke(lineCnt, strokes[within_block]);
+                    goodLineRenderer.setSeriesStroke(lineCnt, strokes[0]);
                     lineCnt++;
                 }
             }
@@ -2560,14 +2553,8 @@ public class HyperBlockGeneration
             DataVisualization.getCoordinates(datum);
             for (int i = 0; i < data.data.length; i++)
             {
-                boolean within = false;
-                for (int k = 0; k < tempBlock.hyper_block.size(); k++)
-                {
-                    if (inside_HB(visualized_block, k, data.data[i]))
-                        within = true;
-                }
-
-                if (within)
+                // If the current datapoint is within the block.
+                if (inside_HB(visualized_block, 0, data.data[i]))
                 {
                     clr_cnt++;
                 }
