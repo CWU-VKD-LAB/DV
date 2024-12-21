@@ -1,3 +1,4 @@
+
 import org.jfree.chart.*;
 import org.jfree.chart.axis.NumberAxis;
 import org.jfree.chart.axis.NumberTickUnit;
@@ -19,8 +20,9 @@ import java.util.List;
 
 public class HyperBlockVisualization
 {
-    Color[] graphColors;
 
+    Color[] graphColors;
+    /*
     ArrayList<ArrayList<double[]>> not_in_HBs;
     ArrayList<double[]> cur_combination = new ArrayList<>();
     ArrayList<ArrayList<double[]>> all_combinations = new ArrayList<>();
@@ -144,23 +146,35 @@ public class HyperBlockVisualization
 
     private String block_desc(int block)
     {
+        HyperBlock tempBlock = hyper_blocks.get(block);
+
         StringBuilder tmp = new StringBuilder("<b>Rule:</b> if ");
         if (DV.fieldLength < 50)
         {
+            // Go through all attributes
             for (int i = 0; i < DV.fieldLength; i++)
             {
-                if (hyper_blocks.get(block).maximums.get(0)[i] > 0)
-                {
-                    if (hyper_blocks.get(block).minimums.get(0)[i] > 0)
-                        tmp.append(String.format("%.2f &le; X%d &le; %.2f", hyper_blocks.get(block).minimums.get(0)[i], i, hyper_blocks.get(block).maximums.get(0)[i]));
-                    else
-                        tmp.append(String.format("X%d &le; %.2f", i, hyper_blocks.get(block).maximums.get(0)[i]));
+                // Go through all the intervals on the current attribute
+                for(int j = 0; j < tempBlock.maximums.get(i).size(); j++){
+                    if (tempBlock.maximums.get(i).get(j) > 0)
+                    {
+                        if(j > 0){
+                            tmp.append(" OR ");
+                        }
 
-                    if (i != DV.fieldLength - 1)
-                        tmp.append(", ");
-                    else
-                        tmp.append(", then class").append(hyper_blocks.get(block).className);
+                        // If min is 0 we will just print the max
+                        if (tempBlock.minimums.get(i).get(j) > 0)
+                            tmp.append(String.format("%.2f &le; X%d &le; %.2f", tempBlock.minimums.get(i).get(j), i, tempBlock.maximums.get(i).get(j)));
+                        else
+                            tmp.append(String.format("X%d &le; %.2f", i, tempBlock.maximums.get(i).get(j)));
+
+                    }
                 }
+
+                if (i != DV.fieldLength - 1)
+                    tmp.append(", ");
+                else
+                    tmp.append(", then class").append(tempBlock.className);
             }
         }
         else
@@ -169,9 +183,9 @@ public class HyperBlockVisualization
         }
 
         String desc = "<html><b>Block:</b> " + (block + 1) + "/" + hyper_blocks.size() + "<br/>";
-        desc += "<b>Class:</b> " + hyper_blocks.get(block).className + "<br/>";
-        desc += "<b>Seed Attribute:</b> " + hyper_blocks.get(block).attribute+ "<br/>";
-        desc += "<b>Datapoints:</b> " + hyper_blocks.get(block).size + " (" + misclassified.get(block) + " misclassified)" + "<br/>";
+        desc += "<b>Class:</b> " + tempBlock.className + "<br/>";
+        desc += "<b>Seed Attribute:</b> " + tempBlock.attribute+ "<br/>";
+        desc += "<b>Datapoints:</b> " + tempBlock.size + " (" + misclassified.get(block) + " misclassified)" + "<br/>";
         desc += "<b>Accuracy:</b> " + (Math.round(acc.get(block) * 10000) / 100.0) + "%<br/>";
         desc += tmp;
         desc += "</html>";
@@ -218,20 +232,20 @@ public class HyperBlockVisualization
                 {
                     /*graphPanel.removeAll();
                     graphPanel.add(drawGLCBlocks(upperObjects, 0));
-                    graphPanel.add(drawGLCBlocks(lowerObjects, 1));*/
+                    graphPanel.add(drawGLCBlocks(lowerObjects, 1)); * /
                 }
                 else if (tileView.isSelected())
                 {
                     if (tiles_active)
                     {
                         /*graphPanel.add(drawGLCBlockTiles(objects));
-                        graphLabel.setText("");*/
+                        graphLabel.setText("");* /
                     }
                     else
                     {
                         /*graphPanel.add(drawGLCBlocks(upperObjects, 0));
                         graphPanel.add(drawGLCBlocks(lowerObjects, 1));
-                        graphLabel.setText(block_desc(visualized_block));*/
+                        graphLabel.setText(block_desc(visualized_block));* /
                     }
                 }
                 else if (combinedClassView.isSelected())
@@ -248,7 +262,7 @@ public class HyperBlockVisualization
                 if (separateView.isSelected())
                 {
                     /*graphPanel.removeAll();
-                    graphPanel.add(SPC(objects));*/
+                    graphPanel.add(SPC(objects));* /
                 }
                 else if (tileView.isSelected())
                 {
@@ -265,7 +279,7 @@ public class HyperBlockVisualization
                 if (separateView.isSelected())
                 {
                     /*graphPanel.removeAll();
-                    graphPanel.add(drawStuff(visualized_block));*/
+                    graphPanel.add(drawStuff(visualized_block));* /
                 }
                 else if (tileView.isSelected())
                 {
@@ -282,7 +296,7 @@ public class HyperBlockVisualization
                 if (separateView.isSelected())
                 {
                     /*graphPanel.removeAll();
-                    graphPanel.add(SPC_Reduced(objects));*/
+                    graphPanel.add(SPC_Reduced(objects));* /
                 }
                 else if (tileView.isSelected())
                 {
@@ -297,6 +311,9 @@ public class HyperBlockVisualization
         }
     }
 
+    /*
+    //AUSTIN 12/20/2024: This function uses the old idea that hb.hyper_block would hold all blocks.
+    // Commented out for now and want to delete but need to make sure won't be needed for HB Levels
     // find HBs that can be combined while maintaining the purity threshold
     private void increase_level_combine_check()
     {
@@ -319,14 +336,15 @@ public class HyperBlockVisualization
 
                     for (int k = 0; k < DV.fieldLength; k++)
                     {
-                        max[k] = Math.max(hyper_blocks.get(i).maximums.get(0)[k], hyper_blocks.get(j).maximums.get(0)[k]);
-                        min[k] = Math.min(hyper_blocks.get(i).minimums.get(0)[k], hyper_blocks.get(j).minimums.get(0)[k]);
+                        max[k] = Math.max(hyper_blocks.get(i).maximums.get(k).get(0), hyper_blocks.get(j).maximums.get(k).get(0));
+                        min[k] = Math.min(hyper_blocks.get(i).minimums.get(k).get(0), hyper_blocks.get(j).minimums.get(k).get(0));
                     }
 
                     HyperBlock test = new HyperBlock(max, min);
                     System.out.println("Combined HB" + (i+1) + " + HB" + (j+1));
                     test.classNum = hyper_blocks.get(i).classNum;
 
+                    // THIS IS NEVER HAPPENENING
                     if (test.hyper_block.size() == 2)
                     {
                         double purity = (double) Math.max(test.hyper_block.get(0).size(), test.hyper_block.get(1).size()) / (test.hyper_block.get(0).size() + test.hyper_block.get(1).size());
@@ -369,6 +387,7 @@ public class HyperBlockVisualization
         test_hb_vis(panels, names, "Combination Results: Good = " + good);
         test_hb_vis(bad_panels, bad_names, "Combination Results: Bad = " + bad);
     }
+    * /
 
     private void test_hb_vis(ArrayList<ChartPanel> panels, ArrayList<String> names, String title)
     {
@@ -401,6 +420,7 @@ public class HyperBlockVisualization
         mainFrame.repaint();
     }
 
+    /*
     private ChartPanel individual_HB_vis(HyperBlock hb, String title)
     {
         JFrame mainFrame = new JFrame();
@@ -553,6 +573,7 @@ public class HyperBlockVisualization
         chartPanel.setMouseWheelEnabled(true);
         return chartPanel;
     }
+    * /
 
     public void increase_level()
     {
@@ -591,14 +612,14 @@ public class HyperBlockVisualization
         // Sort the sizes
         Collections.sort(sizes);
 
-        /*// Find the median size
+        / * // Find the median size
         int median;
         int middle = sizes.size() * 2;
 
         if (sizes.size() % 2 == 0)
             median = (sizes.get(middle - 1) + sizes.get(middle)) / 2;
         else
-            median = sizes.get(middle);*/
+            median = sizes.get(middle);* /
 
         // Find the top 10% size
         int top10PercentIndex = (int) Math.ceil(sizes.size() * 0.9) - 1;
@@ -648,7 +669,7 @@ public class HyperBlockVisualization
 
        /* objects = new ArrayList<>();
         upperObjects = new ArrayList<>();
-        lowerObjects = new ArrayList<>();*/
+        lowerObjects = new ArrayList<>();* /
 
         double[][] newData = new double[tmpData.size()][DV.fieldLength];
         tmpData.toArray(newData);
@@ -665,7 +686,7 @@ public class HyperBlockVisualization
         /*lowerObjects.add(newObj2);
 
         objects.add(upperObjects);
-        objects.add(lowerObjects);*/
+        objects.add(lowerObjects);* /
 
         DV.trainData.clear();
         DV.trainData.add(newObj);
@@ -687,7 +708,7 @@ public class HyperBlockVisualization
 
         DV.trainData.clear();
         DV.trainData.add(originalObjects.get(0).get(0));
-        DV.trainData.add(originalObjects.get(1).get(0));*/
+        DV.trainData.add(originalObjects.get(1).get(0));* /
     }
 
     private void do_stuff()
@@ -796,6 +817,7 @@ public class HyperBlockVisualization
         hyper_blocks.addAll(lower);
     }
 
+    /*
     private void increase_level_DT()
     {
         // get all artificial datapoints
@@ -860,8 +882,9 @@ public class HyperBlockVisualization
 
         average_hb_test();
     }
+    * /
 
-
+    /*
     private ArrayList<double[]> create_averages(int num)
     {
         ArrayList<double[]> stuff = new ArrayList<>();
@@ -1003,7 +1026,9 @@ public class HyperBlockVisualization
 
         return stuff;
     }
+    * /
 
+    /*
     private ArrayList<double[]> create_averages_more_detailed(int num)
     {
         ArrayList<double[]> stuff = new ArrayList<>();
@@ -1182,7 +1207,9 @@ public class HyperBlockVisualization
 
         return stuff;
     }
+    * /
 
+    /*
     private ArrayList<double[]> create_averages_more_detailed_and_lossless(int num)
     {
         ArrayList<double[]> stuff = new ArrayList<>();
@@ -1429,7 +1456,10 @@ public class HyperBlockVisualization
 
         return stuff;
     }
+    * /
 
+
+    /*
     private ArrayList<double[]> create_averages_lossless_distance(int num)
     {
         ArrayList<double[]> stuff = new ArrayList<>();
@@ -1619,6 +1649,7 @@ public class HyperBlockVisualization
 
         return stuff;
     }
+     * /
 
     private double[] lossless_distance(double[] x, double[] y)
     {
@@ -2462,7 +2493,7 @@ public class HyperBlockVisualization
         /**
          * CHANGE THIS
          * stuff = Draw boxes for original SPC visualization
-         */
+         * /
 
         stuff = new JRadioButton("", true);
         //toolBar.add(stuff);
@@ -2580,7 +2611,7 @@ public class HyperBlockVisualization
         /**
          * REMOVE THIS LATER
          * JUST FOR TESTING NEW CASES
-         */
+         * /
 
         JButton ADD_NEW_CASE = new JButton("TEST CASE");
         ADD_NEW_CASE.addActionListener(e -> classify_test_case());
@@ -2588,7 +2619,7 @@ public class HyperBlockVisualization
         /**
          * REMOVE THIS LATER
          * JUST FOR TESTING NEW CASES
-         */
+         * /
 
 
         choose_plot();
@@ -2651,7 +2682,7 @@ public class HyperBlockVisualization
         mainFrame.pack();
         mainFrame.repaint();
     }
-
+    /*
     private void blockCheck()
     {
         int[] counter = new int[hyper_blocks.size()];
@@ -3315,7 +3346,7 @@ public class HyperBlockVisualization
         }
     }
 
-
+    /*
     private boolean in_HB(double[] c)
     {
         for (int i = 0; i < hyper_blocks.size(); i++)
@@ -3348,6 +3379,7 @@ public class HyperBlockVisualization
 
         return false;
     }
+     * /
 
     // create pure hb around a new case
     private void create_kNN_HB(double[] c, double val, int k)
@@ -4511,7 +4543,7 @@ public class HyperBlockVisualization
                 {
                     break;
                 }
-            }*/
+            }* /
 
         }
 
@@ -5004,7 +5036,7 @@ public class HyperBlockVisualization
 
         /**
          * REMOVE LATER
-         */
+         * /
         double[] max = new double[]{0.7777777777777777, 0.3333333333333333, 0.3333333333333333, 0.4444444444444444, 0.33333333333333337, 0.6666666666666666, 0.6666666666666666, 0.7777777777777777, 0.11111111111111108};
         double[] min = new double[]{0.1111111111111111, 0.0, 0.0, 0.11111111111111112, 0.22222222222222224, 0.0, 0.1111111111111111, 0.0, 0.0};
         HyperBlock thingy = new HyperBlock(max, min);
@@ -5014,14 +5046,14 @@ public class HyperBlockVisualization
         hyper_blocks.add(thingy);
         /**
          * REMOVE LATER
-         */
+         * /
 
         // dustin alg
         generateHyperblocks_NO_GLC(test_data, data);
 
         /**
          * REMOVE LATER
-         */
+         * /
         // get all combinations for an individual HB
         /*HyperBlock hb = null;
         for (HyperBlock hyperBlock : hyper_blocks)
@@ -5036,11 +5068,11 @@ public class HyperBlockVisualization
         System.out.println("HB Size: " + hb.size);
         System.out.println("HB Class: " + hb.classNum);
 
-        generateHyperblocksAllCombinations(hb);*/
+        generateHyperblocksAllCombinations(hb);* /
 
         /**
          * REMOVE LATER
-         */
+         * /
 
         // reorder blocks
         ArrayList<ArrayList<HyperBlock>> things = new ArrayList<>();
@@ -6202,7 +6234,7 @@ public class HyperBlockVisualization
                 {
                     break;
                 }
-            }*/
+            }* /
 
         }
 
@@ -6778,7 +6810,7 @@ public class HyperBlockVisualization
                 {
                     break;
                 }
-            }*/
+            }* /
 
             }
 
@@ -8390,7 +8422,7 @@ public class HyperBlockVisualization
         chartPanel.setMouseWheelEnabled(true);
         chartPanel.restoreAutoBounds();
         return chartPanel;
-    }*/
+    }* /
 
     private JPanel drawPCBlockTiles(ArrayList<ArrayList<DataObject>> obj, int red_line, int red_class)
     {
@@ -8941,7 +8973,7 @@ public class HyperBlockVisualization
                 // redo graphs
                 tiles_active = false;
                 updateGraphs();
-            });*/
+            });* /
 
             JButton confirm_analyse = new JButton("Confirm Analyse");
             confirm_analyse.addActionListener(e ->
@@ -9405,7 +9437,7 @@ public class HyperBlockVisualization
                 // redo graphs
                 tiles_active = false;
                 updateGraphs();
-            });*/
+            });* /
 
             JButton confirm_analyse = new JButton("Confirm Analyse");
             confirm_analyse.addActionListener(e ->
@@ -12195,7 +12227,7 @@ public class HyperBlockVisualization
 
             return charts;
         }
-    }*/
+    }* /
 
     private void getOverlapData()
     {
@@ -12348,7 +12380,7 @@ public class HyperBlockVisualization
         }
 
         objects.add(upperObjects);
-        objects.add(lowerObjects);*/
+        objects.add(lowerObjects);* /
 
         // All classes separate
 
@@ -12399,7 +12431,7 @@ public class HyperBlockVisualization
 
         DV.trainData.set(0, upperObjects.get(0));
         DV.trainData.set(1, lowerObjects.get(0));
-        DV.fieldLength = 2;*/
+        DV.fieldLength = 2;* /
     }
 
     private void add_test_data()
@@ -14294,7 +14326,7 @@ public class HyperBlockVisualization
         chartPanel.setMouseWheelEnabled(true);
 
         JOptionPane.showMessageDialog(null, chartPanel);
-    }*/
+    }* /
 
 
 
@@ -14349,4 +14381,9 @@ public class HyperBlockVisualization
         System.out.println("NUMBER OF COMBINATIONS: " + combinations.size());
         hyper_blocks = combinations;
     }
+
+    */
+
+
+
 }

@@ -523,57 +523,6 @@ public class DataSetup
 
 
     /**
-     * Loads hyperblocks from file
-     * @param hbFile .csv file holding hyperblock data
-     * @return whether setupHyperblockData was successful
-     */
-    public static ArrayList<HyperBlock> setupHyperblockData(File hbFile)
-    {
-        // data string[][] representation of import file
-        String[][] stringData = getStringFromCSV(hbFile);
-        // check for proper format;
-        if (stringData != null && stringData[1].length == 2 * DV.fieldLength + 1)
-        {
-            // check classes and update class number
-            if (DV.hasClasses)
-            {
-                ArrayList<String> hb_classes = checkAllClasses(stringData);
-                if (hb_classes.isEmpty())
-                {
-                    ArrayList<HyperBlock> hyper_blocks = new ArrayList<>();
-
-                    // get numerical data from string data
-                    stringData = purgeClasses(stringData);
-                    double[][] numericalData = stringToNumerical(stringData);
-
-                    if (numericalData != null)
-                    {
-                        // create hyperblocks
-                        for (int i = 0; i < numericalData.length; i++)
-                        {
-                            double[] maximums = new double[DV.fieldLength];
-                            double[] minimums = new double[DV.fieldLength];
-
-                            for (int j = 0; j < DV.fieldLength; j++)
-                            {
-                                minimums[j] = numericalData[i][j];
-                                maximums[j] = numericalData[i][j + DV.fieldLength];
-                            }
-
-                            hyper_blocks.add(new HyperBlock(maximums, minimums, Integer.parseInt(hb_classes.get(i))));
-                        }
-
-                        return hyper_blocks;
-                    }
-                }
-            }
-        }
-
-        return null;
-    }
-
-
-    /**
      * Gets all classes from input data
      * @param stringData String[][] representation of input data
      * @return found classes
@@ -644,7 +593,7 @@ public class DataSetup
 
 
     /**
-     *
+     * Search Terms: Reads from csv. Reads in data. Reads data from csv. Read from CSV. read csv
      * @param dataFile .csv file holding data
      * @return String[][] representation of dataFile
      */
