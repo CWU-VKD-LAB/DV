@@ -129,6 +129,8 @@ public class HyperBlockGeneration
             HB_GUI();
             getPlot();
         }
+        simplifyHBtoDisjunctiveForm();
+        HB_analytics();
 
         // k-fold used to be here
         test_HBs();
@@ -206,6 +208,9 @@ public class HyperBlockGeneration
                             mins.add(k, new ArrayList<>(List.of(Math.min(outerBlock.minimums.get(k).get(0), innerBlock.minimums.get(k).get(0)))));
                         }
                     }
+                    System.out.println("MAXES: " + maxes);
+                    System.out.println("MINS: " + mins);
+
 
                     // Go through all the data of other classes, check if it would fall into the new bounds of merged disjunctive block.
                     int classNum = outerBlock.classNum;
@@ -259,8 +264,10 @@ public class HyperBlockGeneration
                             }
 
                             // Assign the copied mins and maxes to the hyper-block
-                            innerBlock.minimums = copiedMins;
-                            innerBlock.maximums = copiedMaxes;
+                            System.out.println("MAXES: " + copiedMaxes);
+                            System.out.println("MINS: " + copiedMins);
+                            outerBlock.minimums = copiedMins;
+                            outerBlock.maximums = copiedMaxes;
 
                             // Mark the inner block for removal
                             blocksToBeRemoved.add(j);
