@@ -154,14 +154,10 @@ public class HyperBlockGeneration
         HB_analytics();
     }
 
-    /*
-            Basically, we do nested for loop through the hyper_blocks.
-
-            We will check if one block fully envelopes the other, if it doesn't we have to check case by
-
-         */
-    //TODO:AUSTIN: THIS NEEDS FIXED FAST!!!!!!!
-    //TODO:AUSTIN: Make this work with the pre-existence of disjunctive blocks. right now it is fixed to use only first intervals .get(k).get(
+    /**
+     * Goes through the existing hyper-blocks and tries to merge blocks of same class together.
+     * The main goal of this function is to create disjunctive blocks. This means they can have OR cases for attribute intervals.
+     */
     private void simplifyHBtoDisjunctiveForm(){
         Set<Integer> blocksToBeRemoved = new HashSet<>();
 
@@ -187,11 +183,6 @@ public class HyperBlockGeneration
                 // we can remove the smaller block
                 boolean allInside = true;
                 for(int k = 0; k < DV.fieldLength; k++){
-
-                    // x1, x2, x3 attribute by attribute through outerblock
-                    // go through the mins list for each attribute x1,1 and so on x1,2 x1, 3...
-                    // check all the mins list x1 against each of outerblocks bounds for x1
-                    // if every x1 bound is inside the bounds of one of the min/max sets in outerblock, we're good to merge with allInside
 
                     ArrayList<Double> outerBlockMinAtt = outerBlock.minimums.get(k);
                     ArrayList<Double> outerBlockMaxAtt = outerBlock.maximums.get(k);
@@ -283,6 +274,7 @@ public class HyperBlockGeneration
             }
         }
 
+        // Remove them in reverse order so indices of blocks isn't shifted
         List<Integer> sortedBlocksToBeRemoved = new ArrayList<>(blocksToBeRemoved);
         sortedBlocksToBeRemoved.sort(Collections.reverseOrder());
         for(int i : sortedBlocksToBeRemoved){
