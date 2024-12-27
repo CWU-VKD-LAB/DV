@@ -109,6 +109,8 @@ public class HyperBlockGeneration
 
     boolean remove_extra = false;
 
+    record Interval(double start, double end) {}
+
 
     HyperBlockGeneration() {
         // set purity threshold
@@ -129,12 +131,11 @@ public class HyperBlockGeneration
             HB_GUI();
             getPlot();
         }
-        simplifyHBtoDisjunctiveForm();
+
         HB_analytics();
 
         // k-fold used to be here
         test_HBs();
-        //clausesBeforeAfterSimplifications();
     }
 
     /**
@@ -153,15 +154,13 @@ public class HyperBlockGeneration
         HB_analytics();
     }
 
-    /*
-        Basically, we do nested for loop through the hyper_blocks.
-
-        We will check if one block fully envelopes the other, if it doesn't we have to check case by
-
+    /**
+     * Goes through the existing hyper-blocks and tries to merge blocks of same class together.
+     * The main goal of this function is to create disjunctive blocks. This means they can have OR cases for attribute intervals.
      */
-    //TODO:AUSTIN: Make this work with the pre-existence of disjunctive blocks. right now it is fixed to use only first intervals .get(k).get(0)
     private void simplifyHBtoDisjunctiveForm(){
         Set<Integer> blocksToBeRemoved = new HashSet<>();
+
         // Go through each hyperblock
         for(int i = 0; i < hyper_blocks.size(); i++){
             HyperBlock outerBlock = hyper_blocks.get(i);
@@ -169,10 +168,13 @@ public class HyperBlockGeneration
                 // Don't compare a block to itself.
                 if(i == j){continue;}
 
-                if(blocksToBeRemoved.contains(i) || blocksToBeRemoved.contains(j)){continue;}
+                if (blocksToBeRemoved.contains(i)) break;
+
+                if (blocksToBeRemoved.contains(j)) continue;
 
                 // Get current inner block of same class
                 HyperBlock innerBlock = hyper_blocks.get(j);
+
                 if(outerBlock.classNum != innerBlock.classNum){
                     continue;
                 }
@@ -181,111 +183,145 @@ public class HyperBlockGeneration
                 // we can remove the smaller block
                 boolean allInside = true;
                 for(int k = 0; k < DV.fieldLength; k++){
-                    if(outerBlock.minimums.get(k).get(0) > innerBlock.minimums.get(k).get(0) || outerBlock.maximums.get(k).get(0) < innerBlock.maximums.get(k).get(0)){
-                        allInside = false;
-                        break;
+
+                    ArrayList<Double> outerBlockMinAtt = outerBlock.minimums.get(k);
+                    ArrayList<Double> outerBlockMaxAtt = outerBlock.maximums.get(k);
+                    ArrayList<Double> innerBlockMinAtt = innerBlock.minimums.get(k);
+                    ArrayList<Double> innerBlockMaxAtt = innerBlock.maximums.get(k);
+
+                    // OUTSIDE ARRAYLIST EACH ENTRY IS AN ATTRIBUTE: {{x1, x1.1, x1,2},{x2, x2.1, x2.1}, {}}
+
+                    // iterate through all of x1 instances for inner block, and see if they are inside one of the outer block instances somewhere.
+                    for (int innerAttributeInstance = 0; innerAttributeInstance < innerBlockMaxAtt.size(); innerAttributeInstance++) {
+                        for (int outerAttributeInstance = 0; outerAttributeInstance < outerBlockMinAtt.size(); outerAttributeInstance++) {
+                            // if inner min is less than outer min, or inner max is greater than outer max, we are not all inside.
+                            if (innerBlockMinAtt.get(innerAttributeInstance) < outerBlockMinAtt.get(outerAttributeInstance) || innerBlockMaxAtt.get(innerAttributeInstance) > outerBlockMaxAtt.get(outerAttributeInstance)){
+                                allInside = false;
+                                break;
+                            }
+                        }
                     }
                 }
 
                 if(allInside){
-                    // This means we can delete the smaller block. (How will this effect our looping tho?)
+                    // This means we can delete the smaller block.
                     blocksToBeRemoved.add(j);
                 }else{
-                    // Exhaustive search with updated intervals.
-                    System.out.println("Doing an exhaustive search:" + i + "j: " + j);
+
                     ArrayList<ArrayList<Double>> mins = new ArrayList<>();
                     ArrayList<ArrayList<Double>> maxes = new ArrayList<>();
 
+                    // Create the MEGA BLOCK!!!!!!!
                     for(int k = 0; k < DV.fieldLength; k++){
-                        if (outerBlock.maximums.get(k).get(0) < innerBlock.minimums.get(k).get(0) || innerBlock.maximums.get(k).get(0) < outerBlock.minimums.get(k).get(0)) {
-                            // If not overlapping, we try to do an OR clause by taking both the inside and outside bounds. inside first.
-                            maxes.add(k, new ArrayList<>(List.of(innerBlock.maximums.get(k).get(0), outerBlock.maximums.get(k).get(0))));
-                            mins.add(k, new ArrayList<>(List.of(innerBlock.minimums.get(k).get(0), outerBlock.minimums.get(k).get(0))));
-                        }else{
-                            //TODO: THIS might battle with removeUselessAttributes. If so, make check to make sure not taking [0, 1]
-                            // If they are overlapping take MAX(maxes) MIN(mins)
-                            maxes.add(k, new ArrayList<>(List.of(Math.max(outerBlock.maximums.get(k).get(0), innerBlock.maximums.get(k).get(0)))));
-                            mins.add(k, new ArrayList<>(List.of(Math.min(outerBlock.minimums.get(k).get(0), innerBlock.minimums.get(k).get(0)))));
-                        }
-                    }
-                    System.out.println("MAXES: " + maxes);
-                    System.out.println("MINS: " + mins);
+                        mins.add(new ArrayList<>());
+                        maxes.add(new ArrayList<>());
 
+                        for(int curr = 0; curr < outerBlock.intervalCount(k); curr++){
+                            mins.get(k).add(outerBlock.minimums.get(k).get(curr));
+                            maxes.get(k).add(outerBlock.maximums.get(k).get(curr));
+                        }
+
+                        for(int curr = 0; curr < innerBlock.intervalCount(k); curr++){
+                            mins.get(k).add(innerBlock.minimums.get(k).get(curr));
+                            maxes.get(k).add(innerBlock.maximums.get(k).get(curr));
+                        }
+
+                        mergeIntervals(k, mins, maxes);
+                    }
 
                     // Go through all the data of other classes, check if it would fall into the new bounds of merged disjunctive block.
                     int classNum = outerBlock.classNum;
+                    boolean doMerge = true;
                     for(int k = 0; k < data.size(); k++) {
-                        if(classNum == k){continue;} //Skip data of same class
-                        boolean blockIsValid = true;
+
+                        // skip data of same class
+                        if(classNum == k){
+                            continue;
+                        }
 
                         for (double[] point : data.get(k).data) {
-                            System.out.println("Checking a point");
-                            boolean pointInBounds = true;
-
-                            for(int p_value = 0; p_value < point.length; p_value++){
-                                boolean dimOutOfBounds = true;
-
-                                // Make sure attribute is outside ALL OR's
-                                for(int n = 0; n < maxes.get(p_value).size(); n++){
-                                    double min = mins.get(p_value).get(n);
-                                    double max = maxes.get(p_value).get(n);
-
-                                    // Check if point falls into the interval
-                                    if(point[p_value] >= min && point[p_value] <= max){
-                                        dimOutOfBounds = false;
-                                        break;
-                                    }
-                                }
-
-                                if(dimOutOfBounds){
-                                    pointInBounds = false;
-                                    break;
-                                }
-                            }
-
-                            // If the point is in the bounds.
-                            if(pointInBounds){
-                                blockIsValid = false;
+                            // Check if the point is within the MEGA BLOCK
+                            if(inside_HB_Intervals(mins, maxes, point)){
+                                doMerge = false;
                                 break;
                             }
                         }
 
-                        if (blockIsValid) {
-                            // Create deep copies of mins and maxes
-                            ArrayList<ArrayList<Double>> copiedMins = new ArrayList<>();
-                            ArrayList<ArrayList<Double>> copiedMaxes = new ArrayList<>();
+                        if(!doMerge){break;}
+                    }
 
-                            for (ArrayList<Double> minList : mins) {
-                                copiedMins.add(new ArrayList<>(minList));
-                            }
+                    if(doMerge) {
+                        // Create deep copies of mins and maxes
+                        ArrayList<ArrayList<Double>> copiedMins = new ArrayList<>();
+                        ArrayList<ArrayList<Double>> copiedMaxes = new ArrayList<>();
 
-                            for (ArrayList<Double> maxList : maxes) {
-                                copiedMaxes.add(new ArrayList<>(maxList));
-                            }
-
-                            // Assign the copied mins and maxes to the hyper-block
-                            System.out.println("MAXES: " + copiedMaxes);
-                            System.out.println("MINS: " + copiedMins);
-                            outerBlock.minimums = copiedMins;
-                            outerBlock.maximums = copiedMaxes;
-
-                            // Mark the inner block for removal
-                            blocksToBeRemoved.add(j);
-                            System.out.println("Block: " + j + " removed because of block: " + i);
+                        for (ArrayList<Double> minList : mins) {
+                            copiedMins.add(new ArrayList<>(minList));
                         }
 
+                        for (ArrayList<Double> maxList : maxes) {
+                            copiedMaxes.add(new ArrayList<>(maxList));
+                        }
+
+                        // Assign the copied mins and maxes to the hyper-block
+                        outerBlock.minimums = copiedMins;
+                        outerBlock.maximums = copiedMaxes;
+
+                        // Mark the inner block for removal
+                        blocksToBeRemoved.add(j);
                     }
                 }
             }
         }
 
+        // Remove them in reverse order so indices of blocks isn't shifted
         List<Integer> sortedBlocksToBeRemoved = new ArrayList<>(blocksToBeRemoved);
         sortedBlocksToBeRemoved.sort(Collections.reverseOrder());
         for(int i : sortedBlocksToBeRemoved){
             hyper_blocks.remove(i);
         }
-
     }
+
+
+    // Method to merge overlapping intervals for each attribute (k)
+    private void mergeIntervals(int k, ArrayList<ArrayList<Double>> mins, ArrayList<ArrayList<Double>> maxes) {
+        // Pair up the mins and maxes into interval objects for easy handling
+        ArrayList<Interval> intervals = new ArrayList<>();
+        for (int i = 0; i < mins.get(k).size(); i++) {
+            intervals.add(new Interval(mins.get(k).get(i), maxes.get(k).get(i)));
+        }
+
+        // Sort the intervals based on their start (mins)
+        intervals.sort(Comparator.comparingDouble(interval -> interval.start));
+
+        // Merge overlapping intervals
+        ArrayList<Interval> mergedIntervals = new ArrayList<>();
+        Interval current = intervals.get(0);
+
+        for (int i = 1; i < intervals.size(); i++) {
+            Interval next = intervals.get(i);
+
+            if (current.end >= next.start) {
+                // If intervals overlap or are adjacent, merge them
+                current = new Interval(current.start, Math.max(current.end, next.end));
+            } else {
+                // If no overlap, add the current interval to mergedIntervals
+                mergedIntervals.add(current);
+                current = next;
+            }
+        }
+        // Add the last interval
+        mergedIntervals.add(current);
+
+        // Update the mins and maxes lists with the merged intervals
+        mins.get(k).clear();
+        maxes.get(k).clear();
+        for (Interval interval : mergedIntervals) {
+            mins.get(k).add(interval.start);
+            maxes.get(k).add(interval.end);
+        }
+    }
+
 
     private void removeUselessAttributes()
     {
@@ -2047,7 +2083,7 @@ public class HyperBlockGeneration
                 XYSeries line = new XYSeries(lineCnt, false, true);
 
                 // Might need to redo this to be similar to the old version when doing disjunctive blocks.
-                boolean within = inside_HB(visualized_block, 0, datum.get(d).data[i]);
+                boolean within = inside_HB(visualized_block, datum.get(d).data[i]);
 
                 // add points to lines
                 int off = 0;
@@ -2301,7 +2337,7 @@ public class HyperBlockGeneration
                 boolean within = false;
                 for (int k = 0; k < tempBlock.hyper_block.size(); k++)
                 {
-                    if (inside_HB(visualized_block, k, data.data[i]))
+                    if (inside_HB(visualized_block, data.data[i]))
                         within = true;
                 }
 
@@ -2323,7 +2359,7 @@ public class HyperBlockGeneration
                 boolean within = false;
                 for (int k = 0; k < tempBlock.hyper_block.size(); k++)
                 {
-                    if (inside_HB(visualized_block, k, data.data[i]))
+                    if (inside_HB(visualized_block, data.data[i]))
                         within = true;
                 }
 
@@ -2561,7 +2597,7 @@ public class HyperBlockGeneration
             for (int i = 0; i < data.data.length; i++)
             {
                 // If the current datapoint is within the block.
-                if (inside_HB(visualized_block, 0, data.data[i]))
+                if (inside_HB(visualized_block,  data.data[i]))
                 {
                     clr_cnt++;
                 }
@@ -2578,7 +2614,7 @@ public class HyperBlockGeneration
                 boolean within = false;
                 for (int k = 0; k < tempBlock.hyper_block.size(); k++)
                 {
-                    if (inside_HB(visualized_block, k, data.data[i]))
+                    if (inside_HB(visualized_block,  data.data[i]))
                         within = true;
                 }
 
@@ -2903,13 +2939,13 @@ public class HyperBlockGeneration
                 hyper_blocks.get(h).hyper_block.get(q).clear();
 
             double maj_cnt = 0;
-            for (int i = 0; i < DV.trainData.size(); i++)
+            for (int i = 0; i < data.size(); i++)
             {
-                for (int j = 0; j < DV.trainData.get(i).data.length; j++)
+                for (int j = 0; j < data.get(i).data.length; j++)
                 {
                     for (int q = 0; q < hyper_blocks.get(h).hyper_block.size(); q++)
                     {
-                        if (inside_HB(h, q, DV.trainData.get(i).data[j]))
+                        if (inside_HB(h, data.get(i).data[j]))
                         {
                             if (i == hyper_blocks.get(h).classNum)
                             {
@@ -2920,7 +2956,7 @@ public class HyperBlockGeneration
 
                             counter[h]++;
                             global_cnt++;
-                            hyper_blocks.get(h).hyper_block.get(q).add(DV.trainData.get(i).data[j]);
+                            hyper_blocks.get(h).hyper_block.get(q).add(data.get(i).data[j]);
                         }
                     }
                 }
@@ -2961,18 +2997,18 @@ public class HyperBlockGeneration
                 bcnt += hyperBlock.hyper_block.get(q).size();
         }
 
-        //System.out.println("TOTAL NUM IN BLOCKS: " + bcnt);
+        System.out.println("TOTAL NUM IN BLOCKS: " + bcnt);
 
-        for (int i = 0; i < DV.trainData.size(); i++)
+        for (int i = 0; i < data.size(); i++)
         {
-            for (int j = 0; j < DV.trainData.get(i).data.length; j++)
+            for (int j = 0; j < data.get(i).data.length; j++)
             {
                 boolean in = false;
                 for (int h = 0; h < hyper_blocks.size(); h++)
                 {
                     for (int q = 0; q < hyper_blocks.get(h).hyper_block.size(); q++)
                     {
-                        if (inside_HB(h, q, DV.trainData.get(i).data[j]))
+                        if (inside_HB(h, data.get(i).data[j]))
                         {
                             in = true;
                             break;
@@ -2993,13 +3029,11 @@ public class HyperBlockGeneration
     /**
      * Checks if data is inside a hyper-block
      * @param hb1 Hyper-block number
-     * @param hb2 Hyper-block sub-block number
      * @param data Data to check
      * @return True if data is inside hyper-block
      */
-    private boolean inside_HB(int hb1, int hb2, double[] data)
+    private boolean inside_HB(int hb1, double[] data)
     {
-        //NOTE: 99% sure hb2 is ALWAYS 0.
         HyperBlock tempBlock = hyper_blocks.get(hb1);
 
         boolean inside = true;
@@ -3028,6 +3062,31 @@ public class HyperBlockGeneration
         return inside;
     }
 
+    private boolean inside_HB_Intervals(ArrayList<ArrayList<Double>> minimums, ArrayList<ArrayList<Double>> maximums, double[] point){
+        boolean inside = true;
+
+        // Go through all attributes
+        for (int i = 0; i < DV.fieldLength; i++)
+        {
+            boolean inAnInterval = false;
+
+            // Go through all intervals the hyperblock allows for the attribute
+            for(int j = 0; j < maximums.get(i).size(); j++){
+                // If the datapoints value falls inside one of the intervals.
+                if (point[i] >= minimums.get(i).get(j) && point[i] <= maximums.get(i).get(j)) {
+                    inAnInterval = true;
+                    break;
+                }
+            }
+
+            if (!inAnInterval) {
+                inside = false;
+                break;
+            }
+        }
+        // Should return true if the point is inside at least 1 interval for all attributes.
+        return inside;
+    }
 
     /**
      * Creates strokes for hyperblocks
@@ -3119,7 +3178,7 @@ public class HyperBlockGeneration
                 for (int hbIndex = 0; hbIndex < hyper_blocks.size(); hbIndex++)
                 {
                     // Check if the current point is within the current hyper-block
-                    boolean inside = inside_HB(hbIndex, -999, DV.testData.get(i).data[j]);
+                    boolean inside = inside_HB(hbIndex, DV.testData.get(i).data[j]);
 
                     if (inside)
                     {

@@ -40,6 +40,20 @@ public class HyperBlock
         findBounds();
     }
 
+    /**
+     * This will return the number of intervals that the HyperBlock has on the attribute specified.
+     * @param attributeNumber The index of the attribute (int).
+     */
+    public int intervalCount(int attributeNumber){
+        int n = this.maximums.get(attributeNumber).size();
+
+        if(n == this.minimums.get(attributeNumber).size()){
+            return n;
+        }
+
+        return -1;
+    }
+
 
     /**
      * Constructor for HyperBlock
@@ -80,7 +94,6 @@ public class HyperBlock
         findData();
     }
 
-
     /**
      * Sets minimum and maximum bound for a hyperblock
      * @param max maximum bound
@@ -108,7 +121,6 @@ public class HyperBlock
         // The datapoints
         ArrayList<ArrayList<double[]>> dps = new ArrayList<>();
         ArrayList<double[]> classPnts = new ArrayList<>();
-
 
         // Go through each class in the dataset.
         for (int i = 0; i < DV.trainData.size(); i++)
