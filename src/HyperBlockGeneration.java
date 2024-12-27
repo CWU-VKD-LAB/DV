@@ -135,7 +135,7 @@ public class HyperBlockGeneration
         HB_analytics();
 
         // k-fold used to be here
-        test_HBs();
+        //test_HBs();
     }
 
     /**
@@ -159,6 +159,7 @@ public class HyperBlockGeneration
      * The main goal of this function is to create disjunctive blocks. This means they can have OR cases for attribute intervals.
      */
     private void simplifyHBtoDisjunctiveForm(){
+        sort_hb_by_size();
         Set<Integer> blocksToBeRemoved = new HashSet<>();
 
         // Go through each hyperblock
@@ -280,6 +281,7 @@ public class HyperBlockGeneration
         for(int i : sortedBlocksToBeRemoved){
             hyper_blocks.remove(i);
         }
+        order_hbs_by_class();
     }
 
 
@@ -1962,6 +1964,10 @@ public class HyperBlockGeneration
             for (int i = 0; i < DV.fieldLength; i++)
             {
                 if(tempB.maximums.get(i).get(0) == 1 && tempB.minimums.get(i).get(0) == 0){
+                    if(i == DV.fieldLength - 1){
+                        rule.append(" then class ").append(DV.uniqueClasses.get(tempB.classNum));
+                    }
+
                     continue;
                 }
 
@@ -2898,28 +2904,8 @@ public class HyperBlockGeneration
         }
     }
 
-
-    /**
-     * Orders hyperblocks by size
-     */
-    private void order_hbs_by_size()
-    {
-        //hyper_blocks.sort(new HBComparator());
-
-
-        ArrayList<ArrayList<HyperBlock>> ordered = new ArrayList<>();
-        for (int i = 0; i < DV.classNumber; i++)
-            ordered.add(new ArrayList<>());
-
-        for (HyperBlock hyperBlock : hyper_blocks)
-            ordered.get(hyperBlock.classNum).add(hyperBlock);
-
-        hyper_blocks.clear();
-        for (ArrayList<HyperBlock> hyperBlocks : ordered)
-        {
-            hyperBlocks.sort(new HBComparator());
-            hyper_blocks.add(hyperBlocks.get(0));
-        }
+    private void sort_hb_by_size(){
+        hyper_blocks.sort(new HBComparator());
     }
 
 
