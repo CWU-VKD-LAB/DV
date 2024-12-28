@@ -508,7 +508,7 @@ public class HyperBlockGeneration
             return;
         }
         // this catches the case where we don't have a cuda device, and runs it instead on the CPU
-        catch(ExceptionInInitializerError e) {
+        catch(ExceptionInInitializerError | NoClassDefFoundError e) {
 
             // mini try catch that is exactly the same.
             try {

@@ -145,10 +145,22 @@ public class DataVisualization
      */
     private static void LDA()
     {
-        // create LDA (python) process
-        ProcessBuilder lda = new ProcessBuilder("cmd", "/c",
-                "source\\Python\\LinearDiscriminantAnalysis\\LinearDiscriminantAnalysis.exe",
-                "source\\Python\\DV_data.csv");
+
+        // Create the LDA process builder
+        ProcessBuilder lda;
+        String os = System.getProperty("os.name").toLowerCase();
+
+        if (os.contains("win")) {
+            // Windows
+            lda = new ProcessBuilder("cmd", "/c",
+                    "source\\Python\\LinearDiscriminantAnalysis\\LinearDiscriminantAnalysis.exe",
+                    "source\\Python\\DV_data.csv");
+        } else {
+            // macOS or Unix/Linux
+            lda = new ProcessBuilder("python3",
+                    "source/Python/LinearDiscriminantAnalysis/LinearDiscriminantAnalysis.py",
+                    "source/Python/DV_data.csv");
+        }
 
         try
         {
@@ -194,6 +206,7 @@ public class DataVisualization
         }
         catch (IOException e)
         {
+            e.printStackTrace();
             JOptionPane.showMessageDialog(DV.mainFrame, "Error: could not run Linear Discriminant Analysis", "Error", JOptionPane.ERROR_MESSAGE);
         }
         catch (Exception e)
@@ -284,6 +297,7 @@ public class DataVisualization
         }
         catch (IOException e)
         {
+            e.printStackTrace();
             JOptionPane.showMessageDialog(DV.mainFrame, "Error: could not run Linear Discriminant Analysis", "Error", JOptionPane.ERROR_MESSAGE);
         }
         catch (Exception e)
