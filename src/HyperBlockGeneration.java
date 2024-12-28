@@ -396,35 +396,41 @@ public class HyperBlockGeneration
     /**
      * Create hyperblocks using Interval Merger Hyper or Hyperblock Rules Linear
      */
-    private void generateHBs(boolean remove_old)
-    {
-        try
-        {
-            // Hyperblocks generated with this algorithm
-            ArrayList<HyperBlock> gen_hb = new ArrayList<>();
+    private void generateHBs(boolean remove_old) {
 
-            if (remove_old)
-                hyper_blocks.clear();
+        // moved variable declarations to here that need to be in scope of either version of the cuda algorithm.
 
-            // get data to create hyperblocks
-            ArrayList<ArrayList<DataATTR>> attributes = separateByAttribute(data);
-            ArrayList<ArrayList<DataATTR>> all_intv = new ArrayList<>();
+        // Hyperblocks generated with this algorithm
+        ArrayList<HyperBlock> gen_hb = new ArrayList<>();
 
-            // get number of threads (number of processors or number of attributes)
-            int numThreads = Math.min(Runtime.getRuntime().availableProcessors(), attributes.size());
-            ExecutorService executorService = Executors.newFixedThreadPool(numThreads);
+        if (remove_old)
+            hyper_blocks.clear();
+
+        // get data to create hyperblocks
+        ArrayList<ArrayList<DataATTR>> attributes = separateByAttribute(data);
+        ArrayList<ArrayList<DataATTR>> all_intv = new ArrayList<>();
+
+        // get number of threads (number of processors or number of attributes)
+        int numThreads = Math.min(Runtime.getRuntime().availableProcessors(), attributes.size());
+        ExecutorService executorService = Executors.newFixedThreadPool(numThreads);
+
+        // Create dataset without data from interval Hyperblocks
+        ArrayList<ArrayList<double[]>> datum = new ArrayList<>();
+        ArrayList<ArrayList<double[]>> seed_data = new ArrayList<>();
+        ArrayList<ArrayList<Integer>> skips = new ArrayList<>();
+
+        // initially generate the blocks
+        try {
 
             long startTime = System.currentTimeMillis();
 
-            while (!attributes.get(0).isEmpty())
-            {
+            while (!attributes.get(0).isEmpty()) {
                 // get largest hyperblock for each attribute
                 ArrayList<DataATTR> intv = interval_hyper(executorService, attributes, acc_threshold, gen_hb);
                 all_intv.add(intv);
 
                 // if Hyperblock is unique then add
-                if (intv.size() > 1)
-                {
+                if (intv.size() > 1) {
                     // Create and add new Hyperblock
                     ArrayList<ArrayList<double[]>> hb_data = new ArrayList<>();
                     ArrayList<double[]> intv_data = new ArrayList<>();
@@ -451,22 +457,15 @@ public class HyperBlockGeneration
             hyper_blocks.addAll(gen_hb);
             executorService.shutdown();
 
-            // Create dataset without data from interval Hyperblocks
-            ArrayList<ArrayList<double[]>> datum = new ArrayList<>();
-            ArrayList<ArrayList<double[]>> seed_data = new ArrayList<>();
-            ArrayList<ArrayList<Integer>> skips = new ArrayList<>();
-
             // all data
-            for (DataObject dataObject : data)
-            {
+            for (DataObject dataObject : data) {
                 datum.add(new ArrayList<>(Arrays.asList(dataObject.data)));
                 seed_data.add(new ArrayList<>());
                 skips.add(new ArrayList<>());
             }
 
             // find which data to skip
-            for (ArrayList<DataATTR> dataATTRS : all_intv)
-            {
+            for (ArrayList<DataATTR> dataATTRS : all_intv) {
                 for (DataATTR dataATTR : dataATTRS)
                     skips.get(dataATTR.cl).add(dataATTR.cl_index);
             }
@@ -474,47 +473,61 @@ public class HyperBlockGeneration
             for (ArrayList<Integer> skip : skips)
                 Collections.sort(skip);
 
-            for (int i = 0; i < data.size(); i++)
-            {
-                for (int j = 0; j < data.get(i).data.length; j++)
-                {
-                    if (!skips.get(i).isEmpty())
-                    {
+            for (int i = 0; i < data.size(); i++) {
+                for (int j = 0; j < data.get(i).data.length; j++) {
+                    if (!skips.get(i).isEmpty()) {
                         if (j != skips.get(i).get(0))
                             seed_data.get(i).add(data.get(i).data[j]);
                         else
                             skips.get(i).remove(0);
-                    }
-                    else
+                    } else
                         seed_data.get(i).add(data.get(i).data[j]);
                 }
             }
 
             // sort data by most important attribute
-            for (int i = 0; i < datum.size(); i++)
-            {
+            for (int i = 0; i < datum.size(); i++) {
                 sortByColumn(datum.get(i), best_attribute);
                 sortByColumn(seed_data.get(i), best_attribute);
             }
-
-            // run dustin algorithm
-            // create new threads equal to the number of processors
-            //executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
-            //merger_hyperblock(executorService, datum, seed_data);
-            merger_cuda(datum, seed_data);
-            //executorService.shutdown();
-
-            // order blocks from biggest to smallest by class
-            order_hbs_by_class();
-            // temp function removes all, but the largest HB in each class
-            //order_hbs_by_size();
         }
-        catch (InterruptedException | ExecutionException e)
-        {
+        catch (InterruptedException | ExecutionException e) {
             LOGGER.log(Level.SEVERE, e.toString(), e);
             DV.warningPopup("Error Generating Hyperblocks", "Could not generate hyperblocks.");
+            return;
         }
 
+        // now if we made it through that, we can simply try the cuda version, if we get an exception for no cuda, then we use the not cuda version
+        try {
+            merger_cuda(datum, seed_data);
+            order_hbs_by_class();
+        }
+        catch (InterruptedException | ExecutionException e) {
+            LOGGER.log(Level.SEVERE, e.toString(), e);
+            DV.warningPopup("Error Generating Hyperblocks", "Could not generate hyperblocks.");
+            return;
+        }
+        // this catches the case where we don't have a cuda device, and runs it instead on the CPU
+        catch(ExceptionInInitializerError e) {
+
+            // mini try catch that is exactly the same.
+            try {
+                // run dustin algorithm
+                // create new threads equal to the number of processors
+                executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+                merger_hyperblock(executorService, datum, seed_data);
+                executorService.shutdown();
+
+                // order blocks from biggest to smallest by class
+                order_hbs_by_class();
+                // temp function removes all, but the largest HB in each class
+                //order_hbs_by_size();
+            } catch (InterruptedException | ExecutionException x) {
+                LOGGER.log(Level.SEVERE, x.toString(), x);
+                DV.warningPopup("Error Generating Hyperblocks", "Could not generate hyperblocks.");
+                return;
+            }
+        }
 
         // SAVES HBS TO FILE FOR LATER USE
         // get the current date and time as a string
@@ -526,7 +539,6 @@ public class HyperBlockGeneration
         saveDataObjectsToCSV(hyper_blocks.get(0).hyper_block, fileName + "HB1.csv");
         saveDataObjectsToCSV(hyper_blocks.get(1).hyper_block, fileName + "HB2.csv");*/
     }
-
 
     /***
      * Separates data into separate lists by attribute
