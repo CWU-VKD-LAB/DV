@@ -77,32 +77,17 @@ public class HyperBlockGeneration
     JPanel navPanel;
 
     // visualization options
-    JRadioButton visualizeWithin;
-    JRadioButton visualizeAll;
-    JRadioButton visualizeOutline;
     JLabel graphLabel;
     JButton right;
     JButton left;
     int visualized_block = 0;
 
-    // plot choice
+    // initial plot choice
     int plot_id = 0;
-    
-    // plot options
-    JRadioButton PC;
-    JRadioButton SPC;
-    JRadioButton GLCL;
-    JRadioButton PC_cross;
-    JRadioButton SPC_less;
-    JRadioButton GLCL_turn;
-    JRadioButton GLCL_turn_dot;
-    JRadioButton GLCL_x_proj_dot;
 
-    // HB viewing options
-    JRadioButton individualView;
-    JRadioButton completeView;
-    JRadioButton combinedClassView;
-    JRadioButton combinedView;
+    JComboBox<String> plotOptions;
+    JComboBox<String> viewOptions;
+    JComboBox<String> dataViewOptions;
 
     // colors
     Color[] graphColors;
@@ -110,7 +95,6 @@ public class HyperBlockGeneration
     boolean remove_extra = false;
 
     record Interval(double start, double end) {}
-
 
     HyperBlockGeneration() {
         // set purity threshold
@@ -284,7 +268,6 @@ public class HyperBlockGeneration
         order_hbs_by_class();
     }
 
-
     // Method to merge overlapping intervals for each attribute (k)
     private void mergeIntervals(int k, ArrayList<ArrayList<Double>> mins, ArrayList<ArrayList<Double>> maxes) {
         // Pair up the mins and maxes into interval objects for easy handling
@@ -323,7 +306,6 @@ public class HyperBlockGeneration
             maxes.get(k).add(interval.end);
         }
     }
-
 
     private void removeUselessAttributes()
     {
@@ -391,7 +373,6 @@ public class HyperBlockGeneration
             tempBlock.maximums = maxes;
         }
     }
-
 
     /**
      * Create hyperblocks using Interval Merger Hyper or Hyperblock Rules Linear
@@ -564,7 +545,6 @@ public class HyperBlockGeneration
 
         return attributes;
     }
-
 
     /**
      * Data Attribute. Stores one attribute of a datapoint and an identifying key shared with other attributes of the same datapoint.
@@ -1506,248 +1486,106 @@ public class HyperBlockGeneration
         mainFrame.repaint();
     }
 
-
     /**
      * Create a toolbar for the hyperblock GUI
      * @return toolbar
      */
-    private JToolBar createToolBar()
-    {
+    private JToolBar createToolBar() {
         JToolBar toolBar = new JToolBar();
         toolBar.setFloatable(false);
         toolBar.setRollover(true);
 
-        // GLC-L plot options
+        // Dropdown for plot options
         JLabel plots = new JLabel("Plot Options: ");
-        ButtonGroup plotBtns = new ButtonGroup();
         plots.setFont(plots.getFont().deriveFont(Font.BOLD, 12f));
         toolBar.add(plots);
         toolBar.addSeparator();
 
-        PC = new JRadioButton("PC", true);
-        PC.addActionListener(pce ->
-        {
-            plot_id = 0;
+        plotOptions = new JComboBox<>(new String[] {"PC", "GLC-L", "SPC-1B", "PC-2n", "SPC-2B"});
+        plotOptions.addActionListener(e -> {
+            String selected = (String) plotOptions.getSelectedItem();
+            switch (selected) {
+                case "PC": plot_id = 0; break;
+                case "GLC-L": plot_id = 1; break;
+                case "SPC-1B": plot_id = 2; break;
+                case "PC-2n": plot_id = 3; break;
+                case "SPC-2B": plot_id = 4; break;
+            }
             updateGraphs();
         });
-        toolBar.add(PC);
-        plotBtns.add(PC);
+        toolBar.add(plotOptions);
         toolBar.addSeparator();
 
-        GLCL = new JRadioButton("GLC-L", false);
-        GLCL.addActionListener(pce ->
-        {
-            plot_id = 1;
-            updateGraphs();
-        });
-        toolBar.add(GLCL);
-        plotBtns.add(GLCL);
-        toolBar.addSeparator();
-
-        SPC = new JRadioButton("SPC-1B", false);
-        SPC.addActionListener(pce ->
-        {
-            plot_id = 2;
-            updateGraphs();
-        });
-        toolBar.add(SPC);
-        plotBtns.add(SPC);
-        toolBar.addSeparator();
-
-        PC_cross = new JRadioButton("PC-2n", false);
-        PC_cross.addActionListener(pcce ->
-        {
-            plot_id = 3;
-            updateGraphs();
-        });
-        toolBar.add(PC_cross);
-        plotBtns.add(PC_cross);
-        toolBar.addSeparator();
-
-        SPC_less = new JRadioButton("SPC-2B", false);
-        SPC_less.addActionListener(spcle ->
-        {
-            plot_id = 4;
-            updateGraphs();
-        });
-        toolBar.add(SPC_less);
-        plotBtns.add(SPC_less);
-        toolBar.addSeparator();
-        toolBar.addSeparator();
-        toolBar.addSeparator();
-
+        // Dropdown for view options
         JLabel views = new JLabel("View Options: ");
-        ButtonGroup viewBtns = new ButtonGroup();
         views.setFont(views.getFont().deriveFont(Font.BOLD, 12f));
         toolBar.add(views);
         toolBar.addSeparator();
 
-        individualView = new JRadioButton("Individual Hyperblocks", true);
-        individualView.setToolTipText("View all hyperblocks separately.");
-        individualView.addActionListener(e ->
-        {
-            // set left and right buttons
-            navPanel.removeAll();
-            navPanel.add(left);
-            navPanel.add(right);
-
-            if (visualized_block > hyper_blocks.size() - 1)
-                visualized_block = 0;
-
+        viewOptions = new JComboBox<>(new String[] {
+                "Individual Hyperblocks", "All Blocks", "Class Combined Blocks", "Combined Blocks"
+        });
+        viewOptions.addActionListener(e -> {
             getPlot();
         });
-        toolBar.add(individualView);
-        viewBtns.add(individualView);
+        toolBar.add(viewOptions);
         toolBar.addSeparator();
 
-        completeView = new JRadioButton("All Blocks");
-        completeView.setToolTipText("View all hyperblocks.");
-        completeView.addActionListener(e ->
-        {
-            // remove left and right buttons
-            navPanel.removeAll();
-            getPlot();
-        });
-        toolBar.add(completeView);
-        viewBtns.add(completeView);
-        toolBar.addSeparator();
-
-        combinedClassView = new JRadioButton("Class Combined Blocks");
-        combinedClassView.setToolTipText("View all hyperblocks with hyperblocks of the same class combined.");
-        combinedClassView.addActionListener(e ->
-        {
-            navPanel.removeAll();
-            getPlot();
-        });
-        toolBar.add(combinedClassView);
-        viewBtns.add(combinedClassView);
-        toolBar.addSeparator();
-
-        combinedView = new JRadioButton("Combined Blocks");
-        combinedView.setToolTipText("View all hyperblocks combined.");
-        combinedView.addActionListener(e ->
-        {
-            navPanel.removeAll();
-            getPlot();
-        });
-        toolBar.add(combinedView);
-        viewBtns.add(combinedView);
-        toolBar.addSeparator();
-        toolBar.addSeparator();
-        toolBar.addSeparator();
-
+        // Dropdown for hyperblock options
         JLabel blockType = new JLabel("Hyperblock Options: ");
-        ButtonGroup dataBtns = new ButtonGroup();
         blockType.setFont(blockType.getFont().deriveFont(Font.BOLD, 12f));
         toolBar.add(blockType);
         toolBar.addSeparator();
 
-        // default blocks
-        JRadioButton defaultBlocksBtn = new JRadioButton("Default Blocks", true);
-        defaultBlocksBtn.setToolTipText("Rebuild blocks using all data.");
-        defaultBlocksBtn.addActionListener(e ->
-        {
-            getData();
+        JComboBox<String> blockOptions = new JComboBox<>(new String[] {
+                "Default Blocks", "Overlap Blocks", "Non-Overlap Blocks"
+        });
+        blockOptions.addActionListener(e -> {
+            String selected = (String) blockOptions.getSelectedItem();
+            if (selected.equals("Default Blocks")) getData();
+            else if (selected.equals("Overlap Blocks")) getOverlapData();
+            else if (selected.equals("Non-Overlap Blocks")) getNonOverlapData();
             updateGraphs();
         });
-        toolBar.add(defaultBlocksBtn);
-        dataBtns.add(defaultBlocksBtn);
+        toolBar.add(blockOptions);
         toolBar.addSeparator();
 
-        // overlap blocks
-        JRadioButton overlapBlocksBtn = new JRadioButton("Overlap Blocks");
-        overlapBlocksBtn.setToolTipText("Rebuild blocks using only data in the overlap area.");
-        overlapBlocksBtn.addActionListener(e ->
-        {
-            getOverlapData();
-            updateGraphs();
-        });
-        toolBar.add(overlapBlocksBtn);
-        dataBtns.add(overlapBlocksBtn);
-        toolBar.addSeparator();
-
-        // non-overlap blocks
-        JRadioButton nonOverlapBlocksBtn = new JRadioButton("Non-Overlap Blocks");
-        nonOverlapBlocksBtn.setToolTipText("Rebuild blocks using only data not in the overlap area.");
-        nonOverlapBlocksBtn.addActionListener(e ->
-        {
-            getNonOverlapData();
-            updateGraphs();
-        });
-        toolBar.add(nonOverlapBlocksBtn);
-        dataBtns.add(nonOverlapBlocksBtn);
-        toolBar.addSeparator();
-        toolBar.addSeparator();
-        toolBar.addSeparator();
-
+        // Dropdown for data view options
         JLabel dataView = new JLabel("Data View Options: ");
-        ButtonGroup dataVisBtns = new ButtonGroup();
         dataView.setFont(dataView.getFont().deriveFont(Font.BOLD, 12f));
         toolBar.add(dataView);
         toolBar.addSeparator();
 
-        visualizeWithin = new JRadioButton("Within Block", true);
-        visualizeWithin.setToolTipText("Only Visualize Datapoints Within Block");
-        visualizeWithin.addActionListener(al -> updateGraphs());
-        toolBar.add(visualizeWithin);
-        dataVisBtns.add(visualizeWithin);
+        dataViewOptions = new JComboBox<>(new String[] {
+                "Within Block", "All Data", "Outline Block"
+        });
+        dataViewOptions.addActionListener(e -> updateGraphs());
+        toolBar.add(dataViewOptions);
         toolBar.addSeparator();
 
-        visualizeAll = new JRadioButton("All Data", false);
-        visualizeAll.setToolTipText("Visualize All Datapoints");
-        visualizeAll.addActionListener(al -> updateGraphs());
-        toolBar.add(visualizeAll);
-        dataVisBtns.add(visualizeAll);
-        toolBar.addSeparator();
-
-        visualizeOutline = new JRadioButton("Outline Block", false);
-        visualizeOutline.setToolTipText("Only Visualize Outline of Block");
-        visualizeOutline.addActionListener(al -> updateGraphs());
-        toolBar.add(visualizeOutline);
-        dataVisBtns.add(visualizeOutline);
-        toolBar.addSeparator();
-        toolBar.addSeparator();
-        toolBar.addSeparator();
-
-        // Simplify by removing attributes
+        // Other options and buttons
         JButton removeUselessBtn = new JButton("Simplify Blocks");
-        toolBar.add(removeUselessBtn);
         removeUselessBtn.addActionListener(e -> {
             removeUselessAttributes();
             HB_analytics();
             updateGraphs();
         });
+        toolBar.add(removeUselessBtn);
+        toolBar.addSeparator();
 
-        // HB level
         JLabel lvlView = new JLabel("HB Level: ");
         lvlView.setFont(lvlView.getFont().deriveFont(Font.BOLD, 12f));
         toolBar.add(lvlView);
 
         hb_lvl = new JSpinner(new SpinnerNumberModel(1, 1, 3, 1));
         hb_lvl.setEditor(new JSpinner.NumberEditor(hb_lvl, "0"));
-        hb_lvl.addChangeListener(hbe ->
-        {
-            if ((Integer) hb_lvl.getValue() == 2 || (Integer) hb_lvl.getValue() == 3)
-            {
+        hb_lvl.addChangeListener(hbe -> {
+            if ((Integer) hb_lvl.getValue() == 2 || (Integer) hb_lvl.getValue() == 3) {
                 increase_level();
                 updateGraphs();
             }
         });
         toolBar.add(hb_lvl);
-        toolBar.addSeparator();
-
-        // test HBs
-        JButton HB_test = new JButton("Test HBs");
-        HB_test.addActionListener(e -> test_HBs());
-        //toolBar.add(HB_test);
-
-        JButton HB_extra = new JButton("Remove Extra");
-        HB_extra.addActionListener(e ->
-        {
-            remove_extra = !remove_extra;
-            updateGraphs();
-        });
-        //toolBar.add(HB_extra);
 
         return toolBar;
     }
@@ -1871,94 +1709,94 @@ public class HyperBlockGeneration
     {
         graphPanel.removeAll();
 
-        // get new visuilization
-        switch (plot_id)
+        // Get the selected plot type from the plot options dropdown
+        String selectedPlot = (String) plotOptions.getSelectedItem();
+        String selectedView = (String) viewOptions.getSelectedItem();
+
+        // Determine the visualization based on dropdown selections
+        switch (selectedPlot)
         {
-            case 0 ->
-            { // PC
-                if (individualView.isSelected())
-                {
-                    graphPanel.add(PC_HB(data, visualized_block));
-                }
-                else if (completeView.isSelected())
-                {
-                    graphPanel.add(PC_HBs(data));
-                }
-                else if (combinedClassView.isSelected())
-                {
-                }
-                else if (combinedView.isSelected())
-                {
+            case "PC" -> {
+                switch (selectedView) {
+                    case "Individual Hyperblocks" -> graphPanel.add(PC_HB(data, visualized_block));
+                    case "All Blocks" -> graphPanel.add(PC_HBs(data));
+                    case "Class Combined Blocks" -> {
+                        // Add your logic for class combined blocks here
+                    }
+                    case "Combined Blocks" -> {
+                        // Add your logic for combined blocks here
+                    }
                 }
             }
-            case 1 ->
-            { // GLC-L
-                if (individualView.isSelected())
-                {
-                    graphPanel.add(GLC_L_HB(data, visualized_block));
-                }
-                else if (completeView.isSelected())
-                {
-                }
-                else if (combinedClassView.isSelected())
-                {
-                }
-                else if (combinedView.isSelected())
-                {
+            case "GLC-L" -> {
+                switch (selectedView) {
+                    case "Individual Hyperblocks" -> graphPanel.add(GLC_L_HB(data, visualized_block));
+                    case "All Blocks" -> {
+                        // Add your logic for all blocks here
+                    }
+                    case "Class Combined Blocks" -> {
+                        // Add your logic for class combined blocks here
+                    }
+                    case "Combined Blocks" -> {
+                        // Add your logic for combined blocks here
+                    }
                 }
             }
-            case 2 ->
-            { // SPC
-                if (individualView.isSelected())
-                {
-                }
-                else if (completeView.isSelected())
-                {
-                }
-                else if (combinedClassView.isSelected())
-                {
-                }
-                else if (combinedView.isSelected())
-                {
-                }
-            }
-            case 3 ->
-            { // PC cross
-                if (individualView.isSelected())
-                {
-                }
-                else if (completeView.isSelected())
-                {
-                }
-                else if (combinedClassView.isSelected())
-                {
-                }
-                else if (combinedView.isSelected())
-                {
+            case "SPC-1B" -> {
+                switch (selectedView) {
+                    case "Individual Hyperblocks" -> {
+                        // Add your logic for individual hyperblocks here
+                    }
+                    case "All Blocks" -> {
+                        // Add your logic for all blocks here
+                    }
+                    case "Class Combined Blocks" -> {
+                        // Add your logic for class combined blocks here
+                    }
+                    case "Combined Blocks" -> {
+                        // Add your logic for combined blocks here
+                    }
                 }
             }
-            case 4 ->
-            { // SPC reduced
-                if (individualView.isSelected())
-                {
+            case "PC-2n" -> {
+                switch (selectedView) {
+                    case "Individual Hyperblocks" -> {
+                        // Add your logic for individual hyperblocks here
+                    }
+                    case "All Blocks" -> {
+                        // Add your logic for all blocks here
+                    }
+                    case "Class Combined Blocks" -> {
+                        // Add your logic for class combined blocks here
+                    }
+                    case "Combined Blocks" -> {
+                        // Add your logic for combined blocks here
+                    }
                 }
-                else if (completeView.isSelected())
-                {
-                }
-                else if (combinedClassView.isSelected())
-                {
-                }
-                else if (combinedView.isSelected())
-                {
+            }
+            case "SPC-2B" -> {
+                switch (selectedView) {
+                    case "Individual Hyperblocks" -> {
+                        // Add your logic for individual hyperblocks here
+                    }
+                    case "All Blocks" -> {
+                        // Add your logic for all blocks here
+                    }
+                    case "Class Combined Blocks" -> {
+                        // Add your logic for class combined blocks here
+                    }
+                    case "Combined Blocks" -> {
+                        // Add your logic for combined blocks here
+                    }
                 }
             }
         }
 
-        // show new visualization
+        // Refresh the visualization
         graphPanel.revalidate();
         graphPanel.repaint();
     }
-
+    
     /**
      * Prints the rules for the hyper-block.
      * @param block The int index of the hyper-block in the list hyper_blocks
@@ -2044,17 +1882,41 @@ public class HyperBlockGeneration
         System.out.println("TOTAL CLAUSES    :  "   + Arrays.stream(classCount).sum());
     }
 
-    private void updateGraphs()
-    {
-        if (individualView.isSelected())
-            individualView.doClick();
-        else if (completeView.isSelected())
-            completeView.doClick();
-        else if (combinedClassView.isSelected())
-            combinedClassView.doClick();
-        else
-            combinedView.doClick();
+    private void updateGraphs() {
+
+        /*
+
+        String selectedOption = (String) viewOptions.getSelectedItem();
+        switch (selectedOption) {
+            case "Individual Hyperblocks" -> {
+                // Equivalent to individualView.doClick();
+                individualViewAction();
+            }
+            case "All Blocks" -> {
+                // Equivalent to completeView.doClick();
+                completeViewAction();
+            }
+            case "Class Combined Blocks" -> {
+                // Equivalent to combinedClassView.doClick();
+                combinedClassViewAction();
+            }
+            default -> {
+                // Default case for Combined View
+                combinedViewAction();
+            }
+        }
+        */
+        // set left and right buttons
+        navPanel.removeAll();
+        navPanel.add(left);
+        navPanel.add(right);
+
+        if (visualized_block > hyper_blocks.size() - 1)
+            visualized_block = 0;
+
+        getPlot();
     }
+
 
 
     //TODO:AUSTIN: Adjusted to NOT BREAK with new mins/max format, but needs to be reworked to work and display the whole block.
@@ -2072,24 +1934,22 @@ public class HyperBlockGeneration
     {
         HyperBlock tempBlock = hyper_blocks.get(visualized_block);
 
-        // create main renderer and dataset
+        // Create main renderers and datasets
         XYLineAndShapeRenderer goodLineRenderer = new XYLineAndShapeRenderer(true, false);
         XYSeriesCollection goodGraphLines = new XYSeriesCollection();
         XYLineAndShapeRenderer badLineRenderer = new XYLineAndShapeRenderer(true, false);
         XYSeriesCollection badGraphLines = new XYSeriesCollection();
 
-        // average renderer and dataset
+        // Average renderer and dataset
         XYLineAndShapeRenderer avgRenderer = new XYLineAndShapeRenderer(true, false);
         XYSeriesCollection avgLines = new XYSeriesCollection();
 
-        // hyperblock renderer and dataset
+        // Hyperblock renderer and dataset
         XYLineAndShapeRenderer pcBlockRenderer = new XYLineAndShapeRenderer(true, false);
         XYSeriesCollection pcBlocks = new XYSeriesCollection();
         XYAreaRenderer pcBlockAreaRenderer = new XYAreaRenderer(XYAreaRenderer.AREA);
         XYSeriesCollection pcBlocksArea = new XYSeriesCollection();
 
-        //TODO:AUSTIN: Removed the old logic for the weird combined HB, but might be able to use this for disjunctive
-        // create different strokes for each HB within a combined HB
         BasicStroke[] strokes = createStrokes(visualized_block);
 
         int lineCnt = 0;
@@ -2097,27 +1957,30 @@ public class HyperBlockGeneration
         {
             for (int i = 0; i < datum.get(d).data.length; i++)
             {
-                // start line at (0, 0)
+                // Start line at (0, 0)
                 XYSeries line = new XYSeries(lineCnt, false, true);
 
-                // Might need to redo this to be similar to the old version when doing disjunctive blocks.
                 boolean within = inside_HB(visualized_block, datum.get(d).data[i]);
 
-                // add points to lines
+                // Add points to lines
                 int off = 0;
                 for (int j = 0; j < DV.fieldLength; j++)
+                {
                     if (remove_extra && tempBlock.minimums.get(j).get(0) != 0.5 && tempBlock.maximums.get(j).get(0) != 0.5)
                     {
                         line.add(off, datum.get(d).data[i][j]);
                         off++;
                     }
                     else if (!remove_extra)
+                    {
                         line.add(j, datum.get(d).data[i][j]);
+                    }
+                }
 
-                // add endpoint and timeline
-                if (visualizeWithin.isSelected() && within)
+                // Add series based on selection in dataViewOptions
+                String selectedOption = (String) dataViewOptions.getSelectedItem();
+                if ("Within Block".equals(selectedOption) && within)
                 {
-                    // add series
                     if (d == tempBlock.classNum)
                     {
                         goodGraphLines.addSeries(line);
@@ -2130,21 +1993,23 @@ public class HyperBlockGeneration
                         badLineRenderer.setSeriesPaint(lineCnt, graphColors[d]);
                         badLineRenderer.setSeriesStroke(lineCnt, strokes[0]);
                     }
-
                     lineCnt++;
                 }
-                else if (visualizeAll.isSelected())
+                else if ("All Data".equals(selectedOption))
                 {
-                    // add series
                     goodGraphLines.addSeries(line);
                     goodLineRenderer.setSeriesPaint(lineCnt, graphColors[d]);
                     goodLineRenderer.setSeriesStroke(lineCnt, strokes[0]);
                     lineCnt++;
                 }
+                else if ("Outline Block".equals(selectedOption))
+                {
+                    // Handle "Outline Block" logic here if needed
+                }
             }
         }
 
-        // populate average series
+        // Populate average series
         for (int k = 0; k < average_case.get(visualized_block).size(); k++)
         {
             if (tempBlock.hyper_block.get(k).size() > 1)
@@ -2152,19 +2017,24 @@ public class HyperBlockGeneration
                 XYSeries line = new XYSeries(k, false, true);
                 int off = 0;
                 for (int i = 0; i < average_case.get(visualized_block).get(k).length; i++)
+                {
                     if (remove_extra && tempBlock.minimums.get(i).get(0) != 0.5 && tempBlock.maximums.get(i).get(0) != 0.5)
                     {
                         line.add(off, average_case.get(visualized_block).get(k)[i]);
                         off++;
                     }
                     else if (!remove_extra)
+                    {
                         line.add(i, average_case.get(visualized_block).get(k)[i]);
+                    }
+                }
 
                 avgLines.addSeries(line);
                 avgRenderer.setSeriesPaint(k, Color.BLACK);
             }
         }
 
+        // Outline block logic remains unchanged
         if (tempBlock.hyper_block.get(0).size() > 1)
         {
             XYSeries tmp1 = new XYSeries(0, false, true);
@@ -2213,14 +2083,12 @@ public class HyperBlockGeneration
             pcBlocksArea.addSeries(tmp2);
         }
 
-
-
-        // create chart and plot
+        // Create chart and plot
         JFreeChart pcChart = ChartsAndPlots.createChart(goodGraphLines, false);
         XYPlot plot = ChartsAndPlots.createHBPlot(pcChart, graphColors[tempBlock.classNum]);
         PC_DomainAndRange(plot);
 
-        // set renderers and datasets
+        // Set renderers and datasets
         plot.setRenderer(0, avgRenderer);
         plot.setDataset(0, avgLines);
         plot.setRenderer(1, pcBlockRenderer);
@@ -2236,6 +2104,7 @@ public class HyperBlockGeneration
         chartPanel.setMouseWheelEnabled(true);
         return chartPanel;
     }
+
 
 
 
