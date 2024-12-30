@@ -2179,6 +2179,10 @@ public class HyperBlockGeneration
         tilePanel.setLayout(new GridLayout((int)Math.ceil(hyper_blocks.size() / 3.0), 3));
         JScrollPane tileScroll = new JScrollPane(tilePanel);
 
+        // Increases the scroll wheel and up/down arrows to 40 pixels per mouse tick.
+        tileScroll.getVerticalScrollBar().setUnitIncrement(40);
+        tileScroll.getVerticalScrollBar().setBlockIncrement(40);
+
         Dimension screenSize = Toolkit.getDefaultToolkit().getScreenSize();
         int width = screenSize.width / 3;
         int height = screenSize.height / ((int)Math.ceil(hyper_blocks.size() / 3.0));
