@@ -3,6 +3,13 @@
 3. Create functions for common code in MHyper algorithm (points/classes in space)
 4. Change HB analytics to account for combined blocks when getting size, misclassified, etc.
 
+# TODO: Post Lincoln Grad
+1. Implement splitting data in train/test.
+2. Fix visualization of disjunctive blocks - Need to go through the XY series and add in the values from interval 0 if missing some X.
+   example: outlines.get(1) will only have a value in its series for the disjunction. it should return the the main block after and before to be plotted. 
+3. Implement Hyper-Block statistics. 
+4. 
+
 # NOTES
 5. DataSetup.java: make saves the same as DV 1.0 (file extension)
 11. abstract LDFRule drawings functions
