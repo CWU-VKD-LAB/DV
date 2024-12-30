@@ -132,7 +132,7 @@ public class HyperBlockGeneration
             HB_GUI();
             getPlot();
         }
-        simplifyHBtoDisjunctiveForm();
+
         HB_analytics();
 
         // k-fold used to be here
@@ -2058,11 +2058,6 @@ public class HyperBlockGeneration
     }
 
 
-    //TODO:AUSTIN: Adjusted to NOT BREAK with new mins/max format, but needs to be reworked to work and display the whole block.
-    /**
-     * MAYBE ABSTRACT LOOPS TO ADD DATA LATER
-     */
-
     /**
      * Create a PC visualization for a single hyper-block
      * @param datum data to visualize
@@ -2085,10 +2080,8 @@ public class HyperBlockGeneration
 
         // renders the hyperblock outline and highlights the area
         XYLineAndShapeRenderer pcBlockRenderer = new XYLineAndShapeRenderer(true, false);
-        ///XYSeriesCollection pcBlocks = new XYSeriesCollection();
         // The area part.
         XYAreaRenderer pcBlockAreaRenderer = new XYAreaRenderer(XYAreaRenderer.AREA);
-        //XYSeriesCollection pcBlocksArea = new XYSeriesCollection();
 
         // This is the line "style" used to be used for like dashed etc
         BasicStroke[] strokes = createStrokes(visualized_block);
@@ -2169,10 +2162,7 @@ public class HyperBlockGeneration
             }
         }
 
-        ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-        /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+        // Get the series for all intervals and give each a style for rendering
         XYSeriesCollection[] temp = buildOutlinesAndArea(visualized_block);
         XYSeriesCollection pcBlocks = temp[0];
         XYSeriesCollection pcBlocksArea = temp[1];
@@ -2181,7 +2171,6 @@ public class HyperBlockGeneration
             pcBlockAreaRenderer.setSeriesPaint(i, new Color(255, 200, 0, 20));
             pcBlockRenderer.setSeriesStroke(i, strokes[0]);
         }
-
 
         // Create chart and plot
         JFreeChart pcChart = ChartsAndPlots.createChart(goodGraphLines, false);
@@ -2208,7 +2197,7 @@ public class HyperBlockGeneration
     }
 
     /**
-     * XYSeries[0] in return is outlines, XYSeries[1] is the areas
+     * XYSeriesCollection[0] in return is outlines, XYSeriesCollection[1] is the areas
      *
      * Plan is to build the series using 2-d Arraylist then convert them into the series objects and return them.
      */
