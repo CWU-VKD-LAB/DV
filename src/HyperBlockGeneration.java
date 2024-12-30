@@ -1573,6 +1573,16 @@ public class HyperBlockGeneration
         toolBar.add(removeUselessBtn);
         toolBar.addSeparator();
 
+        JButton disjunctiveBlocksBtn = new JButton("Form Disjunctive Blocks");
+        disjunctiveBlocksBtn.addActionListener(e -> {
+            simplifyHBtoDisjunctiveForm();
+            clausesBeforeAfterSimplifications();
+            HB_analytics();
+            updateGraphs();
+        });
+        toolBar.add(disjunctiveBlocksBtn);
+        toolBar.addSeparator();
+
         JLabel lvlView = new JLabel("HB Level: ");
         lvlView.setFont(lvlView.getFont().deriveFont(Font.BOLD, 12f));
         toolBar.add(lvlView);

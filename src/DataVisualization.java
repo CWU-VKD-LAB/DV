@@ -222,11 +222,23 @@ public class DataVisualization
      */
     private static void LR()
     {
-        // create LDA (python) process
-        ProcessBuilder lda = new ProcessBuilder("cmd", "/c",
-                "python",
-                "source\\Python\\code_and_pyinstaller_spec\\LinearRegression.py",
-                "source\\Python\\DV_data.csv");
+
+        // Create the linear regression process builder
+        ProcessBuilder lr;
+        String os = System.getProperty("os.name").toLowerCase();
+
+        if (os.contains("win")) {
+            // Windows
+            lr = new ProcessBuilder("cmd", "/c",
+                    "python",
+                    "source\\Python\\code_and_pyinstaller_spec\\LinearRegression.py",
+                    "source\\Python\\DV_data.csv");
+        } else {
+            // macOS or Unix/Linux
+            lr = new ProcessBuilder("python3",
+                    "source\\Python\\code_and_pyinstaller_spec\\LinearRegression.py",
+                    "source\\Python\\DV_data.csv");
+        }
 
         try
         {
@@ -234,7 +246,7 @@ public class DataVisualization
             CSV.createRegCSVDataObject(DV.trainData, "source\\Python\\DV_data.csv");
 
             // run python (LDA) process
-            Process process = lda.start();
+            Process process = lr.start();
 
             // read python outputs
             BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
@@ -306,17 +318,28 @@ public class DataVisualization
         }
     }
 
-
     /**
      * Support Vector Machine (SVM)
      * Gets support vectors
      */
     public static void SVM()
     {
-        // create LDA (python) process
-        ProcessBuilder svm = new ProcessBuilder("cmd", "/c",
-                "source\\Python\\SupportVectorMachine\\SupportVectorMachine.exe",
-                "source\\Python\\DV_data.csv");
+
+        // Create the svm process builder
+        ProcessBuilder svm;
+        String os = System.getProperty("os.name").toLowerCase();
+
+        if (os.contains("win")) {
+            // Windows
+            svm = new ProcessBuilder("cmd", "/c",
+                    "source\\Python\\SupportVectorMachine\\SupportVectorMachine.exe",
+                    "source\\Python\\DV_data.csv");
+        } else {
+            // macOS or Unix/Linux
+            svm = new ProcessBuilder("python3",
+                    "source\\Python\\SupportVectorMachine\\SupportVectorMachine.exe",
+                    "source\\Python\\DV_data.csv");
+        }
 
         try
         {
@@ -2300,7 +2323,6 @@ public class DataVisualization
             return true;
         }
     }
-
 
     /**
      * Draws regression graphs
