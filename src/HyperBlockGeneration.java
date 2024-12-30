@@ -89,7 +89,7 @@ public class HyperBlockGeneration
     JComboBox<String> plotOptions;
     JComboBox<String> viewOptions;
     JComboBox<String> dataViewOptions;
-
+    JComboBox<String> simplifications;
     // colors
     Color[] graphColors;
 
@@ -227,7 +227,7 @@ public class HyperBlockGeneration
 
                         for (double[] point : data.get(k).data) {
                             // Check if the point is within the MEGA BLOCK
-                            if(inside_HB_Intervals(mins, maxes, point)){
+                            if(inside_HB_Intervals(mins, maxes, point, -1)){
                                 doMerge = false;
                                 break;
                             }
@@ -328,34 +328,22 @@ public class HyperBlockGeneration
                 // iterating through all the OTHER classes, k representing a particular class number
                 for(int k = 0; k < data.size(); k++){
                     // Skip going through data of same class as hyperblock
-
                     if(classNum == k){
                         continue;
                     }
 
-                    // classNum of a hyperblock corresponds to index that data exists at in data. so data .get(classNum) to see all data from that class.
                     // Go through each point in the class
-
                     for(double[] point : data.get(k).data){
 
-                        //TODO:AUSTIN Copy over the inside_HB logic instead of old.
-                        // check if the point is within ALL bounds of our hyperblock, except for the attribute we are looking at now
-                        boolean inAllBounds = true;
-                        for(int p_values = 0; p_values < point.length; p_values++){
-                            // Skip the attribute we are trying to remove
-                            if(p_values == removed){
-                                continue;
-                            }
-                            // Check if p_value is less than max and greater than min for current range
-                            if (point[p_values] < mins.get(p_values).get(0) || point[p_values] > maxes.get(p_values).get(0)){
-                                inAllBounds = false;
-                                break;
-                            }
-                        }
-                        if (inAllBounds){
+                        boolean inside = inside_HB_Intervals(mins, maxes, point, removed);
+                        if(inside){
                             someoneInBounds = true;
                             break;
                         }
+                    }
+
+                    if(someoneInBounds){
+                        break;
                     }
 
                 }
@@ -1564,15 +1552,27 @@ public class HyperBlockGeneration
         toolBar.add(dataViewOptions);
         toolBar.addSeparator();
 
-        // Other options and buttons
-        JButton removeUselessBtn = new JButton("Simplify Blocks");
-        removeUselessBtn.addActionListener(e -> {
-            removeUselessAttributes();
+        // Simplification options
+        JLabel simplificationsL = new JLabel("View Options: ");
+        simplificationsL.setFont(simplificationsL.getFont().deriveFont(Font.BOLD, 12f));
+        toolBar.add(simplificationsL);
+        toolBar.addSeparator();
+
+        simplifications = new JComboBox<>(new String[] {
+                "Remove Useless Attributes",
+                "Create Disjunctive Blocks"
+        });
+        simplifications.addActionListener(e ->{
+            String selected = (String) simplifications.getSelectedItem();
+            if (selected.equals("Remove Useless Attributes")) removeUselessAttributes();
+            else if (selected.equals("Create Disjunctive Blocks")) simplifyHBtoDisjunctiveForm();
             HB_analytics();
             updateGraphs();
         });
-        toolBar.add(removeUselessBtn);
+
+        toolBar.add(simplifications);
         toolBar.addSeparator();
+
 
         JLabel lvlView = new JLabel("HB Level: ");
         lvlView.setFont(lvlView.getFont().deriveFont(Font.BOLD, 12f));
@@ -2997,12 +2997,16 @@ public class HyperBlockGeneration
         return inside;
     }
 
-    private boolean inside_HB_Intervals(ArrayList<ArrayList<Double>> minimums, ArrayList<ArrayList<Double>> maximums, double[] point){
+    private boolean inside_HB_Intervals(ArrayList<ArrayList<Double>> minimums, ArrayList<ArrayList<Double>> maximums, double[] point, int exclude){
         boolean inside = true;
 
         // Go through all attributes
         for (int i = 0; i < DV.fieldLength; i++)
         {
+            if(exclude == i){
+                continue;
+            }
+
             boolean inAnInterval = false;
 
             // Go through all intervals the hyperblock allows for the attribute
