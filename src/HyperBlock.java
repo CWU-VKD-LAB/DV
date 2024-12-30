@@ -54,6 +54,21 @@ public class HyperBlock
         return -1;
     }
 
+    /**
+     * Return the max number of intervals that the block has on any attribute.
+     * Ex. if it has 1 interval for x1, but 3 for x2 it will return 3.
+     * @return
+     */
+    public int getMaxDisjunctiveORs(){
+        int max = Integer.MIN_VALUE;
+
+        for(int i = 0; i < maximums.size(); i++){
+            max = Math.max(max, maximums.get(i).size());
+        }
+
+        return max;
+    }
+
 
     /**
      * Constructor for HyperBlock

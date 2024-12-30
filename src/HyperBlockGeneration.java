@@ -19,6 +19,7 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.geom.Ellipse2D;
 import java.awt.geom.Rectangle2D;
+import java.awt.image.AreaAveragingScaleFilter;
 import java.awt.image.BufferedImage;
 import java.io.*;
 import java.nio.file.Files;
@@ -2057,11 +2058,6 @@ public class HyperBlockGeneration
     }
 
 
-    //TODO:AUSTIN: Adjusted to NOT BREAK with new mins/max format, but needs to be reworked to work and display the whole block.
-    /**
-     * MAYBE ABSTRACT LOOPS TO ADD DATA LATER
-     */
-
     /**
      * Create a PC visualization for a single hyper-block
      * @param datum data to visualize
@@ -2082,19 +2078,19 @@ public class HyperBlockGeneration
         XYLineAndShapeRenderer avgRenderer = new XYLineAndShapeRenderer(true, false);
         XYSeriesCollection avgLines = new XYSeriesCollection();
 
-        // hyperblock renderer and dataset
+        // renders the hyperblock outline and highlights the area
         XYLineAndShapeRenderer pcBlockRenderer = new XYLineAndShapeRenderer(true, false);
-        XYSeriesCollection pcBlocks = new XYSeriesCollection();
+        // The area part.
         XYAreaRenderer pcBlockAreaRenderer = new XYAreaRenderer(XYAreaRenderer.AREA);
-        XYSeriesCollection pcBlocksArea = new XYSeriesCollection();
 
-        //TODO:AUSTIN: Removed the old logic for the weird combined HB, but might be able to use this for disjunctive
-        // create different strokes for each HB within a combined HB
+        // This is the line "style" used to be used for like dashed etc
         BasicStroke[] strokes = createStrokes(visualized_block);
 
         int lineCnt = 0;
+        // Loops through the data objects
         for (int d = 0; d < datum.size(); d++)
         {
+            // Go through the datapoints, add to
             for (int i = 0; i < datum.get(d).data.length; i++)
             {
                 // start line at (0, 0)
@@ -2105,6 +2101,7 @@ public class HyperBlockGeneration
 
                 // add points to lines
                 int off = 0;
+                // Goes through all attributes of the same point
                 for (int j = 0; j < DV.fieldLength; j++)
                     if (remove_extra && tempBlock.minimums.get(j).get(0) != 0.5 && tempBlock.maximums.get(j).get(0) != 0.5)
                     {
@@ -2117,7 +2114,7 @@ public class HyperBlockGeneration
                 // add endpoint and timeline
                 if (visualizeWithin.isSelected() && within)
                 {
-                    // add series
+                    // add series if of same class
                     if (d == tempBlock.classNum)
                     {
                         goodGraphLines.addSeries(line);
@@ -2165,62 +2162,22 @@ public class HyperBlockGeneration
             }
         }
 
-        if (tempBlock.hyper_block.get(0).size() > 1)
-        {
-            XYSeries tmp1 = new XYSeries(0, false, true);
-            XYSeries tmp2 = new XYSeries(0, false, true);
-            int cnt = 0;
-            for (int j = 0; j < DV.fieldLength; j++)
-            {
-                if (remove_extra && tempBlock.minimums.get(j).get(0) != 0.5 && tempBlock.maximums.get(j).get(0) != 0.5)
-                {
-                    tmp1.add(cnt, tempBlock.minimums.get(j).get(0));
-                    tmp2.add(cnt, tempBlock.minimums.get(j).get(0));
-                    cnt++;
-                }
-                else if (!remove_extra)
-                {
-                    tmp1.add(j, tempBlock.minimums.get(j).get(0));
-                    tmp2.add(j, tempBlock.minimums.get(j).get(0));
-                }
-            }
-
-            for (int j = DV.fieldLength - 1; j > -1; j--)
-            {
-                if (remove_extra && tempBlock.minimums.get(j).get(0) != 0.5 && tempBlock.maximums.get(j).get(0) != 0.5)
-                {
-                    tmp1.add(cnt, tempBlock.maximums.get(j).get(0));
-                    tmp2.add(cnt, tempBlock.maximums.get(j).get(0));
-                    cnt--;
-                }
-                else if (!remove_extra)
-                {
-                    tmp1.add(j, tempBlock.maximums.get(j).get(0));
-                    tmp2.add(j, tempBlock.maximums.get(j).get(0));
-                }
-            }
-
-            // Hyperblock is always size 1, so k is always 0
-            // this will grab the first element in HB mins
-            tmp1.add(0, tempBlock.minimums.get(0).get(0));
-            tmp2.add(0, tempBlock.minimums.get(0).get(0));
-
-            pcBlockRenderer.setSeriesPaint(0, Color.ORANGE);
-            pcBlockAreaRenderer.setSeriesPaint(0, new Color(255, 200, 0, 20));
-            pcBlockRenderer.setSeriesStroke(0, strokes[0]);
-
-            pcBlocks.addSeries(tmp1);
-            pcBlocksArea.addSeries(tmp2);
+        // Get the series for all intervals and give each a style for rendering
+        XYSeriesCollection[] temp = buildOutlinesAndArea(visualized_block);
+        XYSeriesCollection pcBlocks = temp[0];
+        XYSeriesCollection pcBlocksArea = temp[1];
+        for(int i = 0; i < pcBlocks.getSeriesCount(); i++){
+            pcBlockRenderer.setSeriesPaint(i, Color.ORANGE);
+            pcBlockAreaRenderer.setSeriesPaint(i, new Color(255, 200, 0, 20));
+            pcBlockRenderer.setSeriesStroke(i, strokes[0]);
         }
 
-
-
-        // create chart and plot
+        // Create chart and plot
         JFreeChart pcChart = ChartsAndPlots.createChart(goodGraphLines, false);
         XYPlot plot = ChartsAndPlots.createHBPlot(pcChart, graphColors[tempBlock.classNum]);
         PC_DomainAndRange(plot);
 
-        // set renderers and datasets
+        // Set renderers and datasets for avg and good/bad graph lines
         plot.setRenderer(0, avgRenderer);
         plot.setDataset(0, avgLines);
         plot.setRenderer(1, pcBlockRenderer);
@@ -2232,9 +2189,108 @@ public class HyperBlockGeneration
         plot.setRenderer(4, goodLineRenderer);
         plot.setDataset(4, goodGraphLines);
 
+        // Create ChartPanel
         ChartPanel chartPanel = new ChartPanel(pcChart);
         chartPanel.setMouseWheelEnabled(true);
         return chartPanel;
+
+    }
+
+    /**
+     * XYSeriesCollection[0] in return is outlines, XYSeriesCollection[1] is the areas
+     *
+     * Plan is to build the series using 2-d Arraylist then convert them into the series objects and return them.
+     */
+    private XYSeriesCollection[] buildOutlinesAndArea(int visualized_block){
+        HyperBlock tempBlock = hyper_blocks.get(visualized_block);
+
+        // 2-d arraylist instead of [][] because it is sparse
+        ArrayList<ArrayList<Double>> outlineList = new ArrayList<>();
+        ArrayList<ArrayList<Double>> areaList = new ArrayList<>();
+        int numMaxIntv = tempBlock.getMaxDisjunctiveORs();
+        for(int i = 0; i < numMaxIntv; i++){
+            // Set up all the rows for the intervals.
+            outlineList.add(i, new ArrayList<>(Collections.nCopies(DV.fieldLength * 2, null)));
+            areaList.add(i, new ArrayList<>(Collections.nCopies(DV.fieldLength * 2, null)));
+        }
+
+        // If the block has more than 1 datapoint in it.
+        if (tempBlock.hyper_block.get(0).size() > 1)
+        {
+            for (int attr = 0; attr < DV.fieldLength; attr++) {
+                for (int intv = 0; intv < tempBlock.intervalCount(attr); intv++) {
+                    // Add the minimums for each interval to their respective lists
+                    outlineList.get(intv).set(attr, tempBlock.minimums.get(attr).get(intv));
+                    areaList.get(intv).set(attr, tempBlock.minimums.get(attr).get(intv));
+                }
+            }
+
+            for (int attr = DV.fieldLength - 1; attr > -1; attr--) {
+                for (int intv = 0; intv < tempBlock.intervalCount(attr); intv++) {
+                    outlineList.get(intv).set(DV.fieldLength + attr, tempBlock.maximums.get(attr).get(intv));
+                    areaList.get(intv).set(DV.fieldLength + attr, tempBlock.maximums.get(attr).get(intv));
+                }
+            }
+        }
+
+        // Length of a row is 2 * Field_length
+        XYSeriesCollection outlines = new XYSeriesCollection();
+        XYSeriesCollection areas = new XYSeriesCollection();
+
+        // each row is an interval collection, the column number should be the x for first Dv.FieldLengtht
+        for(int i = 0; i < numMaxIntv; i++){
+            // XYSeries for each interval since it will basically be its own shape.
+            XYSeries series = new XYSeries(i, false, true);
+            for(int attr = 0; attr < DV.fieldLength; attr++){
+
+                if(outlineList.get(i).get(attr) == null){
+                    // Need to add the value from the first interval
+                    Double y = outlineList.get(0).get(attr);
+                    series.add(attr, y);
+
+                }else{
+                    // we can add the value that was in the disjunction
+                    series.add(attr, outlineList.get(i).get(attr));
+                }
+            }
+
+            // Need to go backwards through the elements, but they will be at weird spots since they come after in the list.
+            for(int attr = DV.fieldLength - 1; attr > -1; attr--){
+                Double value = outlineList.get(i).get(DV.fieldLength + attr);
+
+                if(value == null){
+                    value = outlineList.get(0).get(DV.fieldLength + attr);
+                }
+
+                series.add(attr, value);
+            }
+
+            // Add in the first attributes min to close the shape.
+            if(outlineList.get(i).get(0) != null){
+                series.add(0, outlineList.get(i).get(0));
+            }
+            else{
+                series.add(0, outlineList.get(0).get(0));
+            }
+
+            outlines.addSeries(series);
+            areas.addSeries(series);
+        }
+
+        /*
+        for(int i = 0; i < outlines.getSeriesCount(); i++){
+            System.out.println("INTERVAL NUMBER     :     " + i);
+            XYSeries series = outlines.getSeries(i);
+            XYSeries series2 = areas.getSeries(i);
+            System.out.println("THE OUTLINE SERIES IS: ");
+            System.out.println(series.getItems());
+
+            System.out.println("THE AREA SERIES IS: ");
+            System.out.println(series2.getItems());
+
+        }
+         */
+        return new XYSeriesCollection[]{outlines, areas};
     }
 
 
