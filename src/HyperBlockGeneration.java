@@ -90,6 +90,7 @@ public class HyperBlockGeneration
     JComboBox<String> viewOptions;
     JComboBox<String> dataViewOptions;
     JComboBox<String> simplifications;
+    JButton statistics;
     // colors
     Color[] graphColors;
 
@@ -118,7 +119,6 @@ public class HyperBlockGeneration
         }
 
         HB_analytics();
-        dataAnalytics();
         // k-fold used to be here
         //test_HBs();
     }
@@ -267,7 +267,6 @@ public class HyperBlockGeneration
             hyper_blocks.remove(i);
         }
         order_hbs_by_class();
-        dataAnalytics();
     }
 
     // Method to merge overlapping intervals for each attribute (k)
@@ -1576,12 +1575,14 @@ public class HyperBlockGeneration
 
         simplifications = new JComboBox<>(new String[] {
                 "Remove Useless Attributes",
-                "Create Disjunctive Blocks"
+                "Create Disjunctive Blocks",
+                "Remove Useless Blocks"
         });
         simplifications.addActionListener(e ->{
             String selected = (String) simplifications.getSelectedItem();
             if (selected.equals("Remove Useless Attributes")) removeUselessAttributes();
             else if (selected.equals("Create Disjunctive Blocks")) simplifyHBtoDisjunctiveForm();
+            else if (selected.equals("Remove Useless Blocks")) removeUselessBlocks();
             HB_analytics();
             updateGraphs();
         });
@@ -1589,6 +1590,9 @@ public class HyperBlockGeneration
         toolBar.add(simplifications);
         toolBar.addSeparator();
 
+        JButton statistics = new JButton("Block Statistics");
+        toolBar.add(statistics);
+        statistics.addActionListener(e -> new HyperBlockStatistics(hyper_blocks, data));
 
         JLabel lvlView = new JLabel("HB Level: ");
         lvlView.setFont(lvlView.getFont().deriveFont(Font.BOLD, 12f));
@@ -2873,58 +2877,6 @@ public class HyperBlockGeneration
         hyper_blocks.sort(new HBComparator());
     }
 
-    private void dataAnalytics(){
-        System.out.println("Total number of blocks is " + hyper_blocks.size());
-
-        int totalDataPoints = totalDataSetSize();
-        System.out.println("SIZE OF THE DATASET IS  " + totalDataPoints + " POINTS");
-
-        int totalInBlocks = totalPointsInABlock();
-        System.out.println("TOTAL NUMBER THAT IS IN THE BLOCKS IS " + totalInBlocks);
-    }
-
-    /**
-     * Helper for future HyperBlock statistics.
-     * @return The number of points in the dataset that is currently loaded.
-     */
-    private int totalDataSetSize(){
-        int totalDataPoints = 0;
-
-        for(int i = 0; i < data.size(); i++){
-            //System.out.println("CLASS " + i + " SIZE: " + data.get(i).data.length);
-            totalDataPoints += data.get(i).data.length;
-        }
-
-        return totalDataPoints;
-    }
-
-    /**
-     * Helper for future HyperBlock statistics.
-     * @return The number of points that fall within a block. Each point is counted only once, so coverage is accurate.
-     */
-    private int totalPointsInABlock(){
-        int totalInBlocks = 0;
-        // Go through each class
-        for(int i = 0; i < data.size(); i++){
-            // Go through each data point
-            for(int j = 0; j < data.get(i).data.length; j++){
-                double[] point = data.get(i).data[j];
-
-                // Go through all blocks and let them claim a point
-                for(int hb = 0; hb < hyper_blocks.size(); hb++){
-                    // If it is inside a block, let them claim it and keep away from other blocks.
-                    if(inside_HB(hb, point)){
-                        totalInBlocks++;
-                        break;
-                    }
-                }
-            }
-        }
-
-        System.out.println("TOTAL NUMBER THAT IS IN THE BLOCKS IS " + totalInBlocks);
-        return totalInBlocks;
-    }
-
 
     private void HB_analytics()
     {
@@ -3028,6 +2980,36 @@ public class HyperBlockGeneration
         //System.out.println("Total Accuracy: " + (global_maj / global_cnt));
     }
 
+    //TODO: MAKE SURE CLASS CHECK NOT NEEDED
+    private void removeUselessBlocks(){
+
+        // Keep track of distinct points in each block.
+        int[] in = new int[hyper_blocks.size()];
+
+        for(int i = 0; i < data.size(); i++){
+            // Go through each data point
+            for(int j = 0; j < data.get(i).data.length; j++){
+                double[] point = data.get(i).data[j];
+
+                // Go through all blocks and let them claim a point
+                for(int hb = 0; hb < hyper_blocks.size(); hb++){
+                    // If it is inside a block, let them claim it and keep away from other blocks.
+
+                    if(inside_HB(hb, point)){
+                        in[hb]++;
+                        break;
+                    }
+
+                }
+            }
+        }
+
+        for(int i = in.length - 1; i > -1; i--){
+            if(in[i] == 0){
+                hyper_blocks.remove(i);
+            }
+        }
+    }
 
     /**
      * Checks if data is inside a hyper-block
