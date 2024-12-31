@@ -124,22 +124,6 @@ public class HyperBlockGeneration
     }
 
     /**
-     * Prints number of clauses before and after removal of useless attributes.
-     */
-    private void clausesBeforeAfterSimplifications(){
-        System.out.println("\n\n ==================================================== \n");
-        printClauseNumbers();
-
-        System.out.println("AFTER SIMPLIFICATION OF USELESS ATTRIBUTES \n\n ");
-        removeUselessAttributes();
-        printClauseNumbers();
-        System.out.println("\n\n ==================================================== \n");
-
-        // Recall so number datapoints in each block is recalculated correctly.
-        HB_analytics();
-    }
-
-    /**
      * Goes through the existing hyper-blocks and tries to merge blocks of same class together.
      * The main goal of this function is to create disjunctive blocks. This means they can have OR cases for attribute intervals.
      */
@@ -302,8 +286,6 @@ public class HyperBlockGeneration
         // Update the mins and maxes lists with the merged intervals
         mins.get(k).clear();
         maxes.get(k).clear();
-        System.out.println(mins);
-        System.out.println(maxes);
 
         for (Interval interval : mergedIntervals) {
             if (interval.start == 0 && interval.end == 1.0){
@@ -1875,34 +1857,6 @@ public class HyperBlockGeneration
         return desc;
     }
 
-    /**
-     * Sums how many clauses are needed to identify each class throughout all hyper_blocks.
-     * Prints num needed per class and num needed for the whole dataset.
-     */
-    private void printClauseNumbers(){
-        // array for keeping track of clauses for each class
-        int[] classCount = new int[DV.uniqueClasses.size()];
-        for(HyperBlock block : hyper_blocks){
-            for(int i = 0; i < DV.fieldLength; i++){
-                // Range (0,1) means it's a useless attribute that won't be printed
-                if(block.maximums.get(i).get(0) == 1 && block.minimums.get(i).get(0) == 0){
-                    continue;
-                }
-
-                // Loops through all intervals of the current attribute and counts it.
-                for(int j = 0; j < block.maximums.get(i).size(); j++){
-                    classCount[block.classNum]++;
-                }
-            }
-        }
-
-        // Print numbers gathered
-        for(int i = 0;  i < classCount.length; i++){
-            System.out.println("TOTAL CLAUSES FOR CLASS {" + DV.uniqueClasses.get(i) + "}  :  " + classCount[i]);
-        }
-        System.out.println("TOTAL CLAUSES    :  "   + Arrays.stream(classCount).sum());
-    }
-
     private void updateGraphs() {
 
         /*
@@ -2991,23 +2945,90 @@ public class HyperBlockGeneration
             for(int j = 0; j < data.get(i).data.length; j++){
                 double[] point = data.get(i).data[j];
 
+                ArrayList<Integer> potentialHomes = new ArrayList<>();
+
                 // Go through all blocks and let them claim a point
                 for(int hb = 0; hb < hyper_blocks.size(); hb++){
                     // If it is inside a block, let them claim it and keep away from other blocks.
 
                     if(inside_HB(hb, point)){
-                        in[hb]++;
-                        break;
-                    }
 
+                        potentialHomes.add(hb);
+                    }
+                }
+
+                System.out.println(potentialHomes);
+                int bestBlock = -1;
+                int biggestBlock = -1;
+                for (Integer blockToChoose : potentialHomes){
+                    if (in[blockToChoose] > biggestBlock) {
+                        bestBlock = blockToChoose;
+                        biggestBlock = in[blockToChoose];
+                    }
+                }
+
+                if(bestBlock >= 0){
+                    in[bestBlock]++;
                 }
             }
         }
 
-        for(int i = in.length - 1; i > -1; i--){
-            if(in[i] == 0){
-                hyper_blocks.remove(i);
+
+        while(true) {
+            // this point wants to go into blocks 2, 3, 4. pick whichever has biggest in value now.
+            // this way, if a large block missed out on a point previously, it gets a second chance
+            int size = hyper_blocks.size();
+            int[] in_new = new int[size];
+
+            // if a block gets deleted, run it again.
+            // run until no blocks can be deleted.
+
+            /////
+            for(int i = 0; i < data.size(); i++){
+                // Go through each data point
+                for(int j = 0; j < data.get(i).data.length; j++){
+                    double[] point = data.get(i).data[j];
+
+                    ArrayList<Integer> potentialHomes = new ArrayList<>();
+
+                    // Go through all blocks and let them claim a point
+                    for(int hb = 0; hb < hyper_blocks.size(); hb++){
+                        // If it is inside a block, let them claim it and keep away from other blocks.
+
+                        if(inside_HB(hb, point)){
+                            potentialHomes.add(hb);
+                        }
+                    }
+
+                    System.out.println(potentialHomes);
+                    int bestBlock = -1;
+                    int biggestBlock = -1;
+                    for (Integer blockToChoose : potentialHomes){
+                        if (in[blockToChoose] > biggestBlock) {
+                            bestBlock = blockToChoose;
+                            biggestBlock = in[blockToChoose];
+                        }
+                    }
+
+                    if(bestBlock >= 0){
+                        in_new[bestBlock]++;
+                    }
+                }
             }
+            /////
+
+            System.out.println(Arrays.toString(in_new));
+            for (int i = in_new.length - 1; i > -1; i--) {
+                if (in_new[i] == 0) {
+                    hyper_blocks.remove(i);
+                }
+            }
+
+            if (hyper_blocks.size() == size) {
+                break;
+            }
+
+            in = in_new;
         }
     }
 

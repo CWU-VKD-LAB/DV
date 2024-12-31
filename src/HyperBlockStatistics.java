@@ -1,5 +1,6 @@
 import java.lang.reflect.Array;
 import java.util.ArrayList;
+import java.util.Arrays;
 
 /**
  * This class will be the window that shows an in depth view into the statistics of the hyperblocks.
@@ -23,6 +24,8 @@ public class HyperBlockStatistics {
     }
 
     private void dataAnalytics(){
+        printClauseNumbers();
+
         System.out.println("Total number of blocks is " + hyper_blocks.size());
 
         int totalDataPoints = totalDataSetSize();
@@ -78,7 +81,7 @@ public class HyperBlockStatistics {
         }
 
         for(int i = 0; i < in.length; i++){
-            System.out.println("BLOCK #" + i + " HAS " + in[i] + " POINTS");
+            System.out.println("BLOCK #" + (i+1) + " HAS " + in[i] + " POINTS");
         }
 
         System.out.println("TOTAL NUMBER THAT IS IN THE BLOCKS IS " + totalInBlocks);
@@ -123,5 +126,34 @@ public class HyperBlockStatistics {
 
         // Should return true if the point is inside at least 1 interval for all attributes.
         return inside;
+    }
+
+
+    /**
+     * Sums how many clauses are needed to identify each class throughout all hyper_blocks.
+     * Prints num needed per class and num needed for the whole dataset.
+     */
+    private void printClauseNumbers(){
+        // array for keeping track of clauses for each class
+        int[] classCount = new int[DV.uniqueClasses.size()];
+        for(HyperBlock block : hyper_blocks){
+            for(int i = 0; i < DV.fieldLength; i++){
+                // Range (0,1) means it's a useless attribute that won't be printed
+                if(block.maximums.get(i).get(0) == 1 && block.minimums.get(i).get(0) == 0){
+                    continue;
+                }
+
+                // Loops through all intervals of the current attribute and counts it.
+                for(int j = 0; j < block.maximums.get(i).size(); j++){
+                    classCount[block.classNum]++;
+                }
+            }
+        }
+
+        // Print numbers gathered
+        for(int i = 0;  i < classCount.length; i++){
+            System.out.println("TOTAL CLAUSES FOR CLASS {" + DV.uniqueClasses.get(i) + "}  :  " + classCount[i]);
+        }
+        System.out.println("TOTAL CLAUSES    :  "   + Arrays.stream(classCount).sum());
     }
 }
