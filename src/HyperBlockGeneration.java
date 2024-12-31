@@ -118,7 +118,7 @@ public class HyperBlockGeneration
         }
 
         HB_analytics();
-
+        dataAnalytics();
         // k-fold used to be here
         //test_HBs();
     }
@@ -267,6 +267,7 @@ public class HyperBlockGeneration
             hyper_blocks.remove(i);
         }
         order_hbs_by_class();
+        dataAnalytics();
     }
 
     // Method to merge overlapping intervals for each attribute (k)
@@ -350,10 +351,15 @@ public class HyperBlockGeneration
 
                 // if nobody falls into our bounds, we can safely remove now.
                 if(!someoneInBounds){
-                    //System.out.println("Removed : " + removed + " from: " + i);
                     // Update the maxes/mins to allow all range [0, 1] aka removing attribute
                     maxes.get(removed).set(0, 1.0);
                     mins.get(removed).set(0, 0.0);
+
+                    // Remove the other intervals, since the attribute got removed.
+                    for(int f = mins.get(removed).size() - 1; f > 0; f--){
+                        mins.get(removed).remove(f);
+                        maxes.get(removed).remove(f);
+                    }
 
                 }
             }
@@ -2857,6 +2863,58 @@ public class HyperBlockGeneration
         hyper_blocks.sort(new HBComparator());
     }
 
+    private void dataAnalytics(){
+        System.out.println("Total number of blocks is " + hyper_blocks.size());
+
+        int totalDataPoints = totalDataSetSize();
+        System.out.println("SIZE OF THE DATASET IS  " + totalDataPoints + " POINTS");
+
+        int totalInBlocks = totalPointsInABlock();
+        System.out.println("TOTAL NUMBER THAT IS IN THE BLOCKS IS " + totalInBlocks);
+    }
+
+    /**
+     * Helper for future HyperBlock statistics.
+     * @return The number of points in the dataset that is currently loaded.
+     */
+    private int totalDataSetSize(){
+        int totalDataPoints = 0;
+
+        for(int i = 0; i < data.size(); i++){
+            //System.out.println("CLASS " + i + " SIZE: " + data.get(i).data.length);
+            totalDataPoints += data.get(i).data.length;
+        }
+
+        return totalDataPoints;
+    }
+
+    /**
+     * Helper for future HyperBlock statistics.
+     * @return The number of points that fall within a block. Each point is counted only once, so coverage is accurate.
+     */
+    private int totalPointsInABlock(){
+        int totalInBlocks = 0;
+        // Go through each class
+        for(int i = 0; i < data.size(); i++){
+            // Go through each data point
+            for(int j = 0; j < data.get(i).data.length; j++){
+                double[] point = data.get(i).data[j];
+
+                // Go through all blocks and let them claim a point
+                for(int hb = 0; hb < hyper_blocks.size(); hb++){
+                    // If it is inside a block, let them claim it and keep away from other blocks.
+                    if(inside_HB(hb, point)){
+                        totalInBlocks++;
+                        break;
+                    }
+                }
+            }
+        }
+
+        System.out.println("TOTAL NUMBER THAT IS IN THE BLOCKS IS " + totalInBlocks);
+        return totalInBlocks;
+    }
+
 
     private void HB_analytics()
     {
@@ -2932,7 +2990,7 @@ public class HyperBlockGeneration
                 bcnt += hyperBlock.hyper_block.get(q).size();
         }
 
-        System.out.println("TOTAL NUM IN BLOCKS: " + bcnt);
+        //System.out.println("TOTAL NUM IN BLOCKS: " + bcnt);
 
         for (int i = 0; i < data.size(); i++)
         {
