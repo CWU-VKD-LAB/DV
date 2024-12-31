@@ -303,7 +303,17 @@ public class HyperBlockGeneration
         // Update the mins and maxes lists with the merged intervals
         mins.get(k).clear();
         maxes.get(k).clear();
+        System.out.println(mins);
+        System.out.println(maxes);
+
         for (Interval interval : mergedIntervals) {
+            if (interval.start == 0 && interval.end == 1.0){
+                mins.get(k).clear();
+                maxes.get(k).clear();
+                mins.get(k).add(interval.start);
+                maxes.get(k).add(interval.end);
+                break;
+            }
             mins.get(k).add(interval.start);
             maxes.get(k).add(interval.end);
         }
