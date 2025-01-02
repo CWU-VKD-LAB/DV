@@ -62,6 +62,7 @@ public class HyperBlockGeneration
     ArrayList<ArrayList<double[]>> average_case = new ArrayList<>();
     ArrayList<Double> accuracy = new ArrayList<>();
     ArrayList<Integer> misclassified = new ArrayList<>();
+    ArrayList<String> simplificationAlgoLog = new ArrayList<>();
 
     /************************************************************
      * General Line Coordinates Hyperblock Rules Linear (GLC-HBRL)
@@ -1565,6 +1566,9 @@ public class HyperBlockGeneration
             if (selected.equals("Remove Useless Attributes")) removeUselessAttributes();
             else if (selected.equals("Create Disjunctive Blocks")) simplifyHBtoDisjunctiveForm();
             else if (selected.equals("Remove Useless Blocks")) removeUselessBlocks();
+
+            // Add that the algo has run to the log.
+            simplificationAlgoLog.add(selected);
             HB_analytics();
             updateGraphs();
         });
@@ -1574,7 +1578,7 @@ public class HyperBlockGeneration
 
         JButton statistics = new JButton("Block Statistics");
         toolBar.add(statistics);
-        statistics.addActionListener(e -> new HyperBlockStatistics(hyper_blocks, data));
+        statistics.addActionListener(e -> new HyperBlockStatistics(this));
 
         JLabel lvlView = new JLabel("HB Level: ");
         lvlView.setFont(lvlView.getFont().deriveFont(Font.BOLD, 12f));

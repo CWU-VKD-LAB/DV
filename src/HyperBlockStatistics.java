@@ -12,19 +12,25 @@ import java.util.Arrays;
 public class HyperBlockStatistics {
     private ArrayList<HyperBlock> hyper_blocks;
     private ArrayList<DataObject> data;
+    private HyperBlockGeneration hbGen;
 
-    public HyperBlockStatistics(ArrayList<HyperBlock> hyper_blocks, ArrayList<DataObject> data){
-        this.hyper_blocks = hyper_blocks;
-        this.data = data;
+    boolean debug = false; // CHANGE THIS TO ACTIVATE THE PRINT STATEMENTS
 
+    public HyperBlockStatistics(HyperBlockGeneration hbGen){
+        this.hbGen = hbGen;
+        this.data = hbGen.data;
+        this.hyper_blocks = hbGen.hyper_blocks;
         //TODO: Create a solid design of what the window should look like.
         //Use this spot to build the gui.
         dataAnalytics();
+    }
+
+    private void runSomeSimplifications(){
 
     }
 
     private void dataAnalytics(){
-        printClauseNumbers();
+
 
         System.out.println("Total number of blocks is " + hyper_blocks.size());
 
@@ -33,6 +39,19 @@ public class HyperBlockStatistics {
 
         int totalInBlocks = totalPointsInABlock();
         System.out.println("TOTAL NUMBER THAT IS IN THE BLOCKS IS " + totalInBlocks);
+
+        double coverage = ((double) totalInBlocks / totalDataPoints) * 100;
+        System.out.println("TOTAL COVERAGE OF POINTS BY BLOCKS IS " + coverage + "%");
+
+        // Print out which attributes across dataset were important for classification.
+        ArrayList<Integer> usedAttributes = findImportantAttributesTotal();
+        System.out.println("THE ATTRIBUTES THAT WERE USED WERE " + usedAttributes);
+
+        int[] clauseCountsHBs = calculateBlockClauseCount();
+        System.out.println("TOTAL CLAUSES IS"   + Arrays.stream(clauseCountsHBs).sum());
+        System.out.println("BLOCK CLAUSE COUNTS " + Arrays.toString(clauseCountsHBs));
+
+        System.out.println(hbGen.simplificationAlgoLog);
     }
 
     /**
@@ -43,7 +62,6 @@ public class HyperBlockStatistics {
         int totalDataPoints = 0;
 
         for(int i = 0; i < data.size(); i++){
-            //System.out.println("CLASS " + i + " SIZE: " + data.get(i).data.length);
             totalDataPoints += data.get(i).data.length;
         }
 
@@ -80,11 +98,6 @@ public class HyperBlockStatistics {
             }
         }
 
-        for(int i = 0; i < in.length; i++){
-            System.out.println("BLOCK #" + (i+1) + " HAS " + in[i] + " POINTS");
-        }
-
-        System.out.println("TOTAL NUMBER THAT IS IN THE BLOCKS IS " + totalInBlocks);
         return totalInBlocks;
     }
 
@@ -130,10 +143,10 @@ public class HyperBlockStatistics {
 
 
     /**
-     * Sums how many clauses are needed to identify each class throughout all hyper_blocks.
-     * Prints num needed per class and num needed for the whole dataset.
+     * Finds how many clauses there are for each class of hyper-block.
+     * @return An int[] in which each element is the # of clauses for that hyper-block. arr[block.classNum]
      */
-    private void printClauseNumbers(){
+    private int[] calculateClassClauseCount(){
         // array for keeping track of clauses for each class
         int[] classCount = new int[DV.uniqueClasses.size()];
         for(HyperBlock block : hyper_blocks){
@@ -150,10 +163,72 @@ public class HyperBlockStatistics {
             }
         }
 
-        // Print numbers gathered
-        for(int i = 0;  i < classCount.length; i++){
-            System.out.println("TOTAL CLAUSES FOR CLASS {" + DV.uniqueClasses.get(i) + "}  :  " + classCount[i]);
-        }
-        System.out.println("TOTAL CLAUSES    :  "   + Arrays.stream(classCount).sum());
+        return classCount;
     }
+
+    /**
+     * Gets the number of clauses for each individual Hyper-Block.
+     * @return int[], counts[hb] is the # of clauses for block at hyper_blocks[hb]
+     */
+    private int[] calculateBlockClauseCount(){
+        int[] clauseCounts = new int[hyper_blocks.size()];
+
+        for(int hb = 0; hb < hyper_blocks.size(); hb++){
+            HyperBlock block = hyper_blocks.get(hb);
+            for(int i = 0; i < DV.fieldLength; i++){
+                // Range (0,1) means it's a useless attribute that won't be printed
+                if(block.maximums.get(i).get(0) == 1 && block.minimums.get(i).get(0) == 0){
+                    continue;
+                }
+
+                // Loops through all intervals of the current attribute and counts it.
+                for(int j = 0; j < block.maximums.get(i).size(); j++){
+                    clauseCounts[hb]++;
+                }
+            }
+        }
+
+        return clauseCounts;
+    }
+
+    /**
+     * This function should identify which attributes were used across all blocks.
+     * If an attribute has a range of 0-1 across all blocks it should not be included.
+     * @return
+     */
+    private ArrayList<Integer> findImportantAttributesTotal(){
+        //
+        boolean[] used = new boolean[DV.fieldLength];
+
+        for(HyperBlock block : hyper_blocks){
+            for(int i = 0; i < DV.fieldLength; i++){
+                if(block.maximums.get(i).get(0) == 1 && block.minimums.get(i).get(0) == 0){
+                    continue;
+                }
+
+                used[i] = true;
+            }
+        }
+
+        ArrayList<Integer> usedAttributes = new ArrayList<>();
+        for(int i = 0; i < used.length; i++){
+            if(used[i]){
+                usedAttributes.add(i);
+            }
+        }
+
+        return usedAttributes;
+    }
+
+    /**
+     * This function should find the attributes that are important for each individual class.
+     * For example Iris-Setosa may only need x3, so x3 would be the only one that is included.
+     * @return ArrayList<ArrayList<Integer>>, each entry in outer list is for a class, inside will be the important attributes.
+     */
+    private ArrayList<ArrayList<Integer>> findImportantAttributesForClasses(){
+        return null;
+    }
+
+
+
 }
