@@ -62,6 +62,7 @@ public class HyperBlockGeneration
     ArrayList<ArrayList<double[]>> average_case = new ArrayList<>();
     ArrayList<Double> accuracy = new ArrayList<>();
     ArrayList<Integer> misclassified = new ArrayList<>();
+    ArrayList<String> simplificationAlgoLog = new ArrayList<>();
 
     /************************************************************
      * General Line Coordinates Hyperblock Rules Linear (GLC-HBRL)
@@ -122,6 +123,73 @@ public class HyperBlockGeneration
         // k-fold used to be here
         //test_HBs();
     }
+
+    /**
+     * Attempt to expand the intervals then check if any points of other classes would fall into the blocks.
+     * @param amount The amount to try to expand the block by, ex .05, or .1
+     * @param hb_num The index in hyper_blocks of the block to attempt to expand. PASS A NEGATIVE TO EXPAND ALL BLOCKS.
+     */
+    private void attemptToExpandIntervals(double amount, int hb_num){
+        int start = 0;
+        int stop = hyper_blocks.size();
+
+        if (hb_num > -1){
+            start = hb_num;
+            stop = hb_num + 1;
+        }
+
+        // Go through all blocks, or only the one the user entered index for.
+        for(int hb = start; hb < stop; hb++){
+            HyperBlock block = hyper_blocks.get(hb);
+            // Go through all the attributes
+            for(int attr = 0; attr < DV.fieldLength; attr++){
+                // Go through all the intervals for the attribute
+                for(int i = 0; i < block.maximums.get(attr).size(); i++){
+                    // We should attempt to expand both sides of this interval.
+                    double old_max = block.maximums.get(attr).get(i);
+                    double old_min = block.minimums.get(attr).get(i);
+
+                    // Handle the edge case of going over 1 or under 0
+                    double max = Math.min(old_max + amount, 1);
+                    double min = Math.max(old_min - amount, 0);
+
+                    // Set the interval
+                    block.maximums.get(attr).set(i, max);
+                    block.minimums.get(attr).set(i, min);
+
+                    // we now need to make sure the block is still pure.
+                    ///////////////////////////////////////////////////////////////
+                    // Go through all the data of other classes, check if it would fall into the new bounds of merged disjunctive block.
+                    int classNum = block.classNum;
+                    boolean doExpanse = true;
+                    for(int k = 0; k < data.size(); k++) {
+
+                        // skip data of same class
+                        if(classNum == k){
+                            continue;
+                        }
+
+                        for (double[] point : data.get(k).data) {
+                            // Check if the point is within the MEGA BLOCK
+                            if(inside_HB(hb, point)){
+                                doExpanse = false;
+                                break;
+                            }
+                        }
+
+                        if(!doExpanse){break;}
+                    }
+
+                    // Undo the expanse on this interval.
+                    if(!doExpanse) {
+                        block.maximums.get(attr).set(i, old_max);
+                        block.minimums.get(attr).set(i, old_min);
+                    }
+                }
+            }
+        }
+    }
+
 
     /**
      * Goes through the existing hyper-blocks and tries to merge blocks of same class together.
@@ -1558,13 +1626,18 @@ public class HyperBlockGeneration
         simplifications = new JComboBox<>(new String[] {
                 "Remove Useless Attributes",
                 "Create Disjunctive Blocks",
-                "Remove Useless Blocks"
+                "Remove Useless Blocks",
+                //"Expansion Algorithm" Currently disabled until made interactive and ran by Dr. K
         });
         simplifications.addActionListener(e ->{
             String selected = (String) simplifications.getSelectedItem();
             if (selected.equals("Remove Useless Attributes")) removeUselessAttributes();
             else if (selected.equals("Create Disjunctive Blocks")) simplifyHBtoDisjunctiveForm();
             else if (selected.equals("Remove Useless Blocks")) removeUselessBlocks();
+            else if (selected.equals("Expansion Algorithm")) attemptToExpandIntervals(.05, -1);
+
+            // Add that the algo has run to the log.
+            simplificationAlgoLog.add(selected);
             HB_analytics();
             updateGraphs();
         });
@@ -1574,7 +1647,7 @@ public class HyperBlockGeneration
 
         JButton statistics = new JButton("Block Statistics");
         toolBar.add(statistics);
-        statistics.addActionListener(e -> new HyperBlockStatistics(hyper_blocks, data));
+        statistics.addActionListener(e -> new HyperBlockStatistics(this));
 
         JLabel lvlView = new JLabel("HB Level: ");
         lvlView.setFont(lvlView.getFont().deriveFont(Font.BOLD, 12f));
