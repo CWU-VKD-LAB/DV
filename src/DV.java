@@ -64,6 +64,11 @@ public class DV extends JFrame
     static Color background = Color.WHITE;
     static Color svmLines = new Color(139,69,19,75);
 
+    /**************
+     * General Information
+     **************/
+    static String dataFileName;
+
     // graph colors
     static Color[] graphColors = new Color[] {
             new Color(	147, 112, 219),   // upper graph (purple)
@@ -788,6 +793,7 @@ public class DV extends JFrame
                 {
                     // save original file
                     dataFiles.add(dataFile);
+                    dataFileName = dataFile.getName();
 
                     if (classification)
                     {

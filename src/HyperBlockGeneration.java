@@ -99,6 +99,8 @@ public class HyperBlockGeneration
 
     record Interval(double start, double end) {}
 
+    HyperBlockStatistics blockStats;
+
     HyperBlockGeneration() {
         // set purity threshold
         if (explain_ldf)
@@ -120,6 +122,7 @@ public class HyperBlockGeneration
         }
 
         HB_analytics();
+        blockStats = new HyperBlockStatistics(this);
         // k-fold used to be here
         //test_HBs();
     }
@@ -1638,6 +1641,10 @@ public class HyperBlockGeneration
 
             // Add that the algo has run to the log.
             simplificationAlgoLog.add(selected);
+
+            // Create statistics for the blocks resulting from the simplification ran
+            blockStats.updateHyperBlockStatistics();
+
             HB_analytics();
             updateGraphs();
         });
@@ -1647,7 +1654,8 @@ public class HyperBlockGeneration
 
         JButton statistics = new JButton("Block Statistics");
         toolBar.add(statistics);
-        statistics.addActionListener(e -> new HyperBlockStatistics(this));
+        //TODO:AUSTIN: THIS SHOULD NOT MAKE A NEW ONE, INSTEAD SHOULD SHOW THE WINDOW OF EXISTING OBJECT TO THE USER.
+        statistics.addActionListener(e -> blockStats.consoleStatistics());
 
         JLabel lvlView = new JLabel("HB Level: ");
         lvlView.setFont(lvlView.getFont().deriveFont(Font.BOLD, 12f));

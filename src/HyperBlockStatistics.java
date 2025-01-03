@@ -14,44 +14,131 @@ public class HyperBlockStatistics {
     private ArrayList<DataObject> data;
     private HyperBlockGeneration hbGen;
 
-    boolean debug = false; // CHANGE THIS TO ACTIVATE THE PRINT STATEMENTS
+    public record statisticSet(int totalDataPoints, int numBlocks, int totalInBlocks, double coverage,
+                               ArrayList<Integer> usedAttributes, int[] clauseCountsHBs, int totalClauses,
+                               ArrayList<String> algoLog, int[] classClauseCounts, double[] averageSizeByClass,
+                               double averageHBSize, int numSmallHBs, int[] nonDistinctPointCounts, ArrayList<ArrayList<Integer>> usedAttributesByClass){}
+
+    private ArrayList<statisticSet> statisticHistory;
+
+    boolean debug = false;
 
     public HyperBlockStatistics(HyperBlockGeneration hbGen){
         this.hbGen = hbGen;
         this.data = hbGen.data;
         this.hyper_blocks = hbGen.hyper_blocks;
-        //TODO: Create a solid design of what the window should look like.
-        //Use this spot to build the gui.
-        dataAnalytics();
+
+        // Make a new statistic history.
+        this.statisticHistory = new ArrayList<>();
+
+        // Generate stats for the initially generated blocks.
+        updateHyperBlockStatistics();
     }
 
-    private void runSomeSimplifications(){
+    //TODO: IMPLEMENT A GUI WINDOW THAT WILL BE BUILT FOR WHEN THE USER FINALLY CLICKS TO SEE THE STATISTICS.
+    public void statisticsGUI(){
+    }
+
+    /**
+     * Compares two sets of statistics to find the differences.
+     * The comparison will be expressed as a single set of numbers
+     * that indicates the change to the different stats after the "after" simplification has happened.
+     * Simply put: result =
+     * @param before The statistic index to be considered the "before"
+     * @param after The statistics index to be considered the "after"
+     */
+    private void compareStatistics(int before, int after){
 
     }
 
-    private void dataAnalytics(){
+    public void consoleStatistics(){
 
+        System.out.println("\n\n=======================NOW PRINTING ALL STATISTICS=======================");
+        System.out.println("=========================================================================\n\n");
 
-        System.out.println("Total number of blocks is " + hyper_blocks.size());
+        for(statisticSet stats : statisticHistory){
+            System.out.println("\n\n=================== HYPERBLOCK STATISTICS ===================\n");
+
+            System.out.println("=== DATASET INFO ===");
+            System.out.println("Current Dataset: " + DV.dataFileName);
+            System.out.println("DATASET DIMENSIONALITY: " + DV.fieldLength);
+            System.out.println("SIZE OF THE DATASET IS  " + stats.totalDataPoints + " POINTS");
+
+            System.out.println("\n=== BLOCKS & COVERAGE ===");
+            System.out.println("TOTAL NUMBER OF BLOCKS " + stats.numBlocks);
+            System.out.println("NUMBER OF POINTS IN A BLOCK " + stats.totalInBlocks);
+            System.out.println("TOTAL COVERAGE OF POINTS BY BLOCKS IS " + stats.coverage + "%");
+
+            System.out.println("AVERAGE NUMBER OF POINTS IN BLOCKS: " + stats.averageHBSize);
+            System.out.println("AVERAGE NUMBER OF POINTS IN BLOCKS BY CLASS:");
+            for(int i = 0; i < DV.classNumber; i++){
+                System.out.printf("\tCLASS %s: %.2f POINTS\n", DV.uniqueClasses.get(i), stats.averageSizeByClass[i]);
+            }
+
+            System.out.println("NUMBER OF SMALL BLOCKS:  " + stats.numSmallHBs);
+
+            System.out.println("\n=== USED ATTRIBUTES ===");
+            System.out.println("THE ATTRIBUTES THAT WERE USED WERE " + stats.usedAttributes);
+
+            System.out.println("\n== BY CLASS ==");
+            for(int i =  0; i < stats.usedAttributesByClass.size(); i++){
+                System.out.println("\tCLASS: " + DV.uniqueClasses.get(i));
+                System.out.println(stats.usedAttributesByClass.get(i) + "\n");
+            }
+
+            System.out.println("\n=== CLAUSE COUNTS ===");
+            System.out.println("TOTAL CLAUSES IS "   + stats.totalClauses);
+            System.out.println("BLOCK CLAUSE COUNTS " + Arrays.toString(stats.clauseCountsHBs));
+
+            System.out.println("\n== BY CLASS ==");
+            for(int i = 0; i < stats.classClauseCounts.length; i++){
+                System.out.println("\tCLASS \"" + DV.uniqueClasses.get(i) + "\" : " + stats.classClauseCounts[i]);
+            }
+
+            System.out.println("\n=== SIMPLIFICATIONS ===");
+            for(int i = 0; i < stats.algoLog.size(); i++){
+                System.out.printf("\t%d. %s\n", i + 1, stats.algoLog.get(i));
+            }
+
+            //averageSizeByClass, nonDistinctPointCounts
+            System.out.println("\n=================== END STATISTICS ===================\n");
+        }
+    }
+
+    /**
+     * This is the "endpoint" that should be called after a simplification is run in the HyperBlockGeneration class
+     * this will generate statistics for the change and add it to the history.
+     * Once user opens the statistics page this will be filled.
+     */
+    public void updateHyperBlockStatistics(){
+        statisticHistory.add(dataAnalytics());
+    }
+
+    private statisticSet dataAnalytics(){
 
         int totalDataPoints = totalDataSetSize();
-        System.out.println("SIZE OF THE DATASET IS  " + totalDataPoints + " POINTS");
-
+        int numBlocks = hyper_blocks.size();
         int totalInBlocks = totalPointsInABlock();
-        System.out.println("TOTAL NUMBER THAT IS IN THE BLOCKS IS " + totalInBlocks);
-
         double coverage = ((double) totalInBlocks / totalDataPoints) * 100;
-        System.out.println("TOTAL COVERAGE OF POINTS BY BLOCKS IS " + coverage + "%");
-
         // Print out which attributes across dataset were important for classification.
         ArrayList<Integer> usedAttributes = findImportantAttributesTotal();
-        System.out.println("THE ATTRIBUTES THAT WERE USED WERE " + usedAttributes);
-
         int[] clauseCountsHBs = calculateBlockClauseCount();
-        System.out.println("TOTAL CLAUSES IS"   + Arrays.stream(clauseCountsHBs).sum());
-        System.out.println("BLOCK CLAUSE COUNTS " + Arrays.toString(clauseCountsHBs));
+        int totalClauses = Arrays.stream(clauseCountsHBs).sum();
+        ArrayList<String> algoLog = new ArrayList<>(hbGen.simplificationAlgoLog);
 
-        System.out.println(hbGen.simplificationAlgoLog);
+        int[] classClauseCounts = calculateClassClauseCount();
+        int[] nonDistinctPointCounts = numberOfNonDistinctPointsInBlocks();
+        double[] averageSizeByClass = averageBlockSizeByClass(nonDistinctPointCounts);
+        double averageHBSize = averageBlockSize(nonDistinctPointCounts);
+
+        int numSmallHBs = numberOfSmallBlocks(nonDistinctPointCounts, (int) ((totalDataPoints * .02)));
+        ArrayList<ArrayList<Integer>> usedAttributesByClass = findImportantAttributesForClasses();
+
+        //averageSizeByClass, averageHBSize, numSmallHBs, nonDistinctPointCounts, usedAttributesByClass
+        // Sorry.
+        return new statisticSet(totalDataPoints, numBlocks, totalInBlocks, coverage,
+                usedAttributes,clauseCountsHBs, totalClauses, algoLog, classClauseCounts,
+                averageSizeByClass, averageHBSize, numSmallHBs, nonDistinctPointCounts, usedAttributesByClass);
     }
 
     /**
@@ -226,9 +313,102 @@ public class HyperBlockStatistics {
      * @return ArrayList<ArrayList<Integer>>, each entry in outer list is for a class, inside will be the important attributes.
      */
     private ArrayList<ArrayList<Integer>> findImportantAttributesForClasses(){
-        return null;
+        boolean[][] used = new boolean[DV.classNumber][DV.fieldLength];
+
+        for(HyperBlock block : hyper_blocks){
+            for(int i = 0; i < DV.fieldLength; i++){
+                if(block.maximums.get(i).get(0) == 1 && block.minimums.get(i).get(0) == 0){
+                    continue;
+                }
+
+                used[block.classNum][i] = true;
+            }
+        }
+
+        ArrayList<ArrayList<Integer>> usedAttrs = new ArrayList<>();
+        for(int i = 0; i < used.length; i++){
+            usedAttrs.add(new ArrayList<>());
+        }
+
+        for(int i = 0; i < used.length; i++){
+            for(int j = 0; j < used[i].length; j++){
+                if(used[i][j]){
+                    // Add the current attribute index to the list of used attributes.
+                    usedAttrs.get(i).add(j);
+                }
+            }
+        }
+        return usedAttrs;
     }
 
+    private int[] numberOfNonDistinctPointsInBlocks(){
+        int[] pointCounts = new int[hyper_blocks.size()];
 
+        // Go through all blocks and count points inside.
+        for(int hb = 0; hb < hyper_blocks.size(); hb++){
+            for(int i = 0; i < data.size(); i++){
+                for(double[] point : data.get(i).data){
+                    if(inside_HB(hb, point)){
+                        pointCounts[hb]++;
+                    }
+                }
+            }
+        }
+
+        return pointCounts;
+    }
+
+    /**
+     * Should return the number of blocks that are "small" or overfit as categorized by threshold.
+     * @param pointsInBlocks Arraylist with number of non-distinct points each block has.
+     * @param threshold The threshold for a block to be considered a small block.
+     * @return The integer number of blocks which have # points <= threshold.
+     */
+    private int numberOfSmallBlocks(int[] pointsInBlocks, int threshold){
+        int count = 0;
+
+        for(int num : pointsInBlocks){
+            if(num <= threshold){
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    /**
+     * Returns the average number of points in each block.
+     * @param pointsInBlocks Array with # of points for each block.
+     * @return Average number of points in all blocks.
+     */
+    private double averageBlockSize(int[] pointsInBlocks){
+        return ((double)Arrays.stream(pointsInBlocks).sum() / pointsInBlocks.length);
+    }
+
+    /**
+     * Returns the average number of points in each class of blocks.
+     * @param pointsInBlocks Array with # of points for each block.
+     * @return Average number of points in blocks of each class.
+     */
+    private double[] averageBlockSizeByClass(int[] pointsInBlocks){
+        // Hold number of points, and number of blocks of each class.
+        double[] sumsThenAvgs = new double[DV.classNumber];
+        int[] counts = new int[DV.classNumber];
+
+        for(int hb = 0; hb < hyper_blocks.size(); hb++){
+            HyperBlock block = hyper_blocks.get(hb);
+            int numP = pointsInBlocks[hb];
+
+            sumsThenAvgs[block.classNum] += numP;
+            counts[block.classNum]++;
+        }
+
+        // Convert each into an average.
+        for(int i = 0; i < DV.classNumber; i++){
+            sumsThenAvgs[i] = sumsThenAvgs[i] / counts[i];
+        }
+
+        return sumsThenAvgs;
+    }
 
 }
