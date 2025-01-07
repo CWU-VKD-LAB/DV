@@ -1,6 +1,7 @@
 import java.lang.reflect.Array;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Scanner;
 
 /**
  * This class will be the window that shows an in depth view into the statistics of the hyperblocks.
@@ -21,7 +22,7 @@ public class HyperBlockStatistics {
 
     private ArrayList<statisticSet> statisticHistory;
 
-    boolean debug = false;
+    boolean debug = true;
 
     public HyperBlockStatistics(HyperBlockGeneration hbGen){
         this.hbGen = hbGen;
@@ -32,6 +33,38 @@ public class HyperBlockStatistics {
         this.statisticHistory = new ArrayList<>();
 
         // Generate stats for the initially generated blocks.
+        updateHyperBlockStatistics();
+        //auto();
+    }
+
+    public void auto(){
+        // Do disjunctive
+        hbGen.simplifyHBtoDisjunctiveForm();
+        hbGen.simplificationAlgoLog.add("Create Disjunctive Blocks");
+        updateHyperBlockStatistics();
+        compareStatistics(0,1);
+
+        autoReset();
+        hbGen.removeUselessAttributes();
+        hbGen.simplificationAlgoLog.add("Remove Useless Attributes");
+        updateHyperBlockStatistics();
+        compareStatistics(0,1);
+
+        autoReset();
+        hbGen.removeUselessBlocks();
+        hbGen.simplificationAlgoLog.add("Remove Useless Blocks");
+        updateHyperBlockStatistics();
+        compareStatistics(0,1);
+    }
+
+    private void autoReset(){
+        // Clear the algo log in hb generation
+        hbGen.simplificationAlgoLog.clear();
+        // Make the default blocks again (COULD CHANGE THIS TO JUST STORE INITIAL ONES)
+        hbGen.generateHBs(true);
+        // Clear stats sets in here
+        statisticHistory.clear();
+        // generate for default blocks.
         updateHyperBlockStatistics();
     }
 
@@ -48,7 +81,109 @@ public class HyperBlockStatistics {
      * @param after The statistics index to be considered the "after"
      */
     private void compareStatistics(int before, int after){
+        System.out.println(statisticHistory.size() - 1 + "is the last index of the set");
+        if(debug){
+            Scanner scan = new Scanner(System.in);
+            System.out.println("Before: ");
+            before = scan.nextInt();
+            System.out.println("After: ");
+            after = scan.nextInt();
+        }
 
+        // Set for the before info and set for the after info
+        statisticSet sBefore = statisticHistory.get(before);
+        statisticSet sAfter = statisticHistory.get(after);
+
+        System.out.println("=== DATASET INFO ===");
+        System.out.printf("\t%s\n",DV.dataFileName);
+        System.out.printf("\t%s-D\n", DV.fieldLength);
+        System.out.printf("\t%s points\n\n", sBefore.totalDataPoints);
+
+
+        // Difference in the simplifications ran from setB to setA.
+        System.out.println("=== SIMPLIFICATIONS FROM BEFORE TO AFTER ===");
+        for(int i = sBefore.algoLog.size(); i < sAfter.algoLog.size(); i++){
+            System.out.println("\t" + (i+1) + ". " + sAfter.algoLog.get(i));
+        }
+        // ex before "Remove Useless" after "Create Disjunctive"
+
+        // % reduction in blocks. 10 -> 8
+        double blockChange = 100 - ((double)sAfter.numBlocks / sBefore.numBlocks) * 100.0;
+        double smallBlockChange = 100 - ((double)sAfter.numSmallHBs / sBefore.numSmallHBs) * 100.0;
+        double averageBlockSizeChange = -(100 - ((double)sAfter.averageHBSize / sBefore.averageHBSize) * 100.0);
+
+        System.out.println("\n=== BLOCKS ===");
+        System.out.printf("\t%-25s %d ---> %d\n", "Total number blocks :", sBefore.numBlocks, sAfter.numBlocks);
+        System.out.printf("\t%.2f%% fewer blocks.\n", blockChange);
+
+        // Number of small blocks:
+        System.out.printf("\t%-25s %d ---> %d\n", "Number small blocks :", sBefore.numSmallHBs, sAfter.numSmallHBs);
+        System.out.printf("\t%.2f%% fewer small blocks.\n", smallBlockChange);
+
+        // AVERAGE BLOCK SIZES, AND BY CLASS SIZES
+        System.out.printf("\t%-25s %.2f ---> %.2f\n", "Avg. points/block :", sBefore.averageHBSize, sAfter.averageHBSize);
+        System.out.printf("\t%.2f%% more avg. points/block\n", averageBlockSizeChange);
+
+        for(int i = 0; i < DV.classNumber; i++){
+            System.out.printf("\tClass \"%s\" : %f ---> %f avg. points/block.\n", DV.uniqueClasses.get(i), sBefore.averageSizeByClass[i], sAfter.averageSizeByClass[i]);
+        }
+
+        System.out.println("\n=== CLAUSES ===");
+        // % reduction in clauses.
+        double clauseChange = 100 - ((double)sAfter.totalClauses / sBefore.totalClauses) * 100.0;
+        System.out.printf("\t%d clauses ---> %d clauses.\n", sBefore.totalClauses, sAfter.totalClauses);
+
+        System.out.printf("\t%.2f%% fewer clauses total.\n\n", clauseChange);
+
+        // % reduction in clauses per class
+        double[] classClauseChanges = new double[sAfter.classClauseCounts.length];
+        for(int i = 0; i < sAfter.classClauseCounts.length; i++){
+            classClauseChanges[i] = 100 - ((double)sAfter.classClauseCounts[i] / sBefore.classClauseCounts[i]) * 100.0;
+            System.out.printf("\tClass %s: %.2f%% fewer clauses.\n", DV.uniqueClasses.get(i), classClauseChanges[i]);
+        }
+
+        double attributeChange =  100 - ((double)sAfter.usedAttributes.size() / sBefore.usedAttributes.size()) * 100.0;
+        System.out.println("\n=== Attributes ===");
+        System.out.printf("\t%d ---> %d attributes used.  (-%.2f%%)\n", sBefore.usedAttributes.size(), sAfter.usedAttributes.size(), attributeChange);
+
+        System.out.print("\tAttributes used before: ");
+        for(int i = 0; i < sBefore.usedAttributes.size(); i++){
+            System.out.printf("x%d, ", sBefore.usedAttributes.get(i));
+        }
+
+        System.out.print("\n\tAttributes used after: ");
+        for(int i = 0; i < sAfter.usedAttributes.size(); i++){
+            System.out.printf("x%d, ", sAfter.usedAttributes.get(i));
+        }
+
+        System.out.print("\n\tThe attributes removed from before to after were: ");
+        ArrayList<Integer> removed = new ArrayList<>(sBefore.usedAttributes);
+        removed.removeAll(sAfter.usedAttributes);
+        for (Integer attr : removed) {
+            System.out.printf("x%d,  ", attr);
+        }
+
+        if(removed.isEmpty()){
+            System.out.print("NONE. \n");
+        }
+
+        System.out.print("\n=== ATTRIBUTES BY CLASS ===");
+
+        for (int i = 0; i < DV.classNumber; i++) {
+            // Print "Before" line
+            System.out.printf("\n\n\t%-7s - Class \"%-15s\" : ", "Before", DV.uniqueClasses.get(i));
+            for (Integer attr : sBefore.usedAttributesByClass.get(i)) {
+                System.out.printf("x%d,  ", attr);
+            }
+
+            // Print "After" line
+            System.out.printf("\n\t%-7s - Class \"%-15s\" : ", "After", DV.uniqueClasses.get(i));
+            for (Integer attr : sAfter.usedAttributesByClass.get(i)) {
+                System.out.printf("x%d,  ", attr);
+            }
+        }
+
+        System.out.println("\n");
     }
 
     public void consoleStatistics(){
@@ -103,6 +238,8 @@ public class HyperBlockStatistics {
             //averageSizeByClass, nonDistinctPointCounts
             System.out.println("\n=================== END STATISTICS ===================\n");
         }
+
+        compareStatistics(0, 1);
     }
 
     /**
@@ -131,7 +268,7 @@ public class HyperBlockStatistics {
         double[] averageSizeByClass = averageBlockSizeByClass(nonDistinctPointCounts);
         double averageHBSize = averageBlockSize(nonDistinctPointCounts);
 
-        int numSmallHBs = numberOfSmallBlocks(nonDistinctPointCounts, (int) ((totalDataPoints * .02)));
+        int numSmallHBs = numberOfSmallBlocks(nonDistinctPointCounts, 10);
         ArrayList<ArrayList<Integer>> usedAttributesByClass = findImportantAttributesForClasses();
 
         //averageSizeByClass, averageHBSize, numSmallHBs, nonDistinctPointCounts, usedAttributesByClass

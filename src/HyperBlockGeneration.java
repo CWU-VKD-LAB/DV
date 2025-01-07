@@ -198,7 +198,7 @@ public class HyperBlockGeneration
      * Goes through the existing hyper-blocks and tries to merge blocks of same class together.
      * The main goal of this function is to create disjunctive blocks. This means they can have OR cases for attribute intervals.
      */
-    private void simplifyHBtoDisjunctiveForm(){
+    public void simplifyHBtoDisjunctiveForm(){
         sort_hb_by_size();
         Set<Integer> blocksToBeRemoved = new HashSet<>();
 
@@ -371,7 +371,7 @@ public class HyperBlockGeneration
         }
     }
 
-    private void removeUselessAttributes()
+    public void removeUselessAttributes()
     {
 
         // Go through all hyperblocks
@@ -434,7 +434,7 @@ public class HyperBlockGeneration
     /**
      * Create hyperblocks using Interval Merger Hyper or Hyperblock Rules Linear
      */
-    private void generateHBs(boolean remove_old) {
+    public void generateHBs(boolean remove_old) {
 
         // moved variable declarations to here that need to be in scope of either version of the cuda algorithm.
 
@@ -1630,7 +1630,7 @@ public class HyperBlockGeneration
                 "Remove Useless Attributes",
                 "Create Disjunctive Blocks",
                 "Remove Useless Blocks",
-                //"Expansion Algorithm" Currently disabled until made interactive and ran by Dr. K
+                "Expansion Algorithm" //Currently disabled until made interactive and ran by Dr. K
         });
         simplifications.addActionListener(e ->{
             String selected = (String) simplifications.getSelectedItem();
@@ -1655,7 +1655,9 @@ public class HyperBlockGeneration
         JButton statistics = new JButton("Block Statistics");
         toolBar.add(statistics);
         //TODO:AUSTIN: THIS SHOULD NOT MAKE A NEW ONE, INSTEAD SHOULD SHOW THE WINDOW OF EXISTING OBJECT TO THE USER.
-        statistics.addActionListener(e -> blockStats.consoleStatistics());
+        statistics.addActionListener(e -> {
+            blockStats.consoleStatistics();
+        });
 
         JLabel lvlView = new JLabel("HB Level: ");
         lvlView.setFont(lvlView.getFont().deriveFont(Font.BOLD, 12f));
@@ -3016,7 +3018,7 @@ public class HyperBlockGeneration
     }
 
     //TODO: MAKE SURE CLASS CHECK NOT NEEDED
-    private void removeUselessBlocks(){
+    public void removeUselessBlocks(){
 
         // Keep track of distinct points in each block.
         int[] in = new int[hyper_blocks.size()];
@@ -3038,7 +3040,6 @@ public class HyperBlockGeneration
                     }
                 }
 
-                System.out.println(potentialHomes);
                 int bestBlock = -1;
                 int biggestBlock = -1;
                 for (Integer blockToChoose : potentialHomes){
@@ -3081,7 +3082,7 @@ public class HyperBlockGeneration
                         }
                     }
 
-                    System.out.println(potentialHomes);
+
                     int bestBlock = -1;
                     int biggestBlock = -1;
                     for (Integer blockToChoose : potentialHomes){
@@ -3098,7 +3099,6 @@ public class HyperBlockGeneration
             }
             /////
 
-            System.out.println(Arrays.toString(in_new));
             for (int i = in_new.length - 1; i > -1; i--) {
                 if (in_new[i] == 0) {
                     hyper_blocks.remove(i);
@@ -3945,10 +3945,10 @@ public class HyperBlockGeneration
                 merging_hbs.add(seed_hb);
             }
 
-            System.out.println("Cnt: " + cnt);
-            System.out.println("HB num: " + merging_hbs.size());
-            System.out.println("Seed HB Cls: " + seed_hb.classNum);
-            System.out.println("Check time: " + executionTime + " milliseconds");
+            //System.out.println("Cnt: " + cnt);
+            //System.out.println("HB num: " + merging_hbs.size());
+            //System.out.println("Seed HB Cls: " + seed_hb.classNum);
+            //System.out.println("Check time: " + executionTime + " milliseconds");
 
             time_cnt++;
             total_time += executionTime;
@@ -3958,7 +3958,7 @@ public class HyperBlockGeneration
         } while (actionTaken || cnt > 0);
 
 
-        System.out.println("Average time: " + total_time / time_cnt + " milliseconds");
+        //System.out.println("Average time: " + total_time / time_cnt + " milliseconds");
 
         //TODO:AUSTIN: MAKE SURE THIS IS A DEEP COPY
         // Create hyperblocks from merging blocks
