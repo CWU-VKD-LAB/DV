@@ -101,6 +101,9 @@ public class HyperBlockGeneration
 
     HyperBlockStatistics blockStats;
 
+    // Testing to see if i can use this to keep track of which block is which.
+    // When a block is removed statistics should know somehow which block went away to display right.
+    ArrayList<Integer> orderMimic = new ArrayList<>();
     HyperBlockGeneration() {
         // set purity threshold
         if (explain_ldf)
@@ -122,9 +125,51 @@ public class HyperBlockGeneration
         }
 
         HB_analytics();
+
+        /**
+         * Set the original position of blocks in the list
+         * This helps with keeping track of what blocks
+         * were deleted in statistics.
+         */
+        for(int i = 0; i < hyper_blocks.size(); i++){
+            HyperBlock hb = hyper_blocks.get(i);
+            hb.originalPosition = i;
+        }
+
         blockStats = new HyperBlockStatistics(this);
         // k-fold used to be here
         //test_HBs();
+    }
+
+    public void expandWithRealEdges(int hb_num){
+        int start = 0;
+        int stop = hyper_blocks.size();
+
+        if (hb_num > -1){
+            start = hb_num;
+            stop = hb_num + 1;
+        }
+
+        // Take the hyper-block we are currently on.
+            //for maxes: find a point of same class that has closest value > the current max
+                // try to expand to that value for the max
+                    // check the integrity of hb
+            //for mins: find a point of the same class that has closest value < the current min
+                // try to expand
+
+
+        for(int hb = start; hb < stop; hb++){
+
+        }
+    }
+
+    /**
+     * Helper function to safely remove a hb from both the mimic and the actual list of hyper_blocks.
+     * @param hb The index of the block to be removed.
+     */
+    private void removeHB(int hb){
+        hyper_blocks.remove(hb);
+        //orderMimic.remove(hb);
     }
 
     /**
@@ -132,7 +177,12 @@ public class HyperBlockGeneration
      * @param amount The amount to try to expand the block by, ex .05, or .1
      * @param hb_num The index in hyper_blocks of the block to attempt to expand. PASS A NEGATIVE TO EXPAND ALL BLOCKS.
      */
-    private void attemptToExpandIntervals(double amount, int hb_num){
+    private void attemptToExpandIntervals(double amount, int hb_num, boolean keepEdgesReal){
+        if(keepEdgesReal){
+            expandWithRealEdges(hb_num);
+            return;
+        }
+
         int start = 0;
         int stop = hyper_blocks.size();
 
@@ -199,7 +249,7 @@ public class HyperBlockGeneration
      * The main goal of this function is to create disjunctive blocks. This means they can have OR cases for attribute intervals.
      */
     public void simplifyHBtoDisjunctiveForm(){
-        sort_hb_by_size();
+        //sort_hb_by_size();
         Set<Integer> blocksToBeRemoved = new HashSet<>();
 
         // Go through each hyperblock
@@ -319,7 +369,8 @@ public class HyperBlockGeneration
         List<Integer> sortedBlocksToBeRemoved = new ArrayList<>(blocksToBeRemoved);
         sortedBlocksToBeRemoved.sort(Collections.reverseOrder());
         for(int i : sortedBlocksToBeRemoved){
-            hyper_blocks.remove(i);
+            // SAFE WAY TO REMOVE A HYPER-BLOCK, WHILE UPDATING MIMIC FOR STATISTICS TRACKING
+            removeHB(i);
         }
         order_hbs_by_class();
     }
@@ -1637,7 +1688,7 @@ public class HyperBlockGeneration
             if (selected.equals("Remove Useless Attributes")) removeUselessAttributes();
             else if (selected.equals("Create Disjunctive Blocks")) simplifyHBtoDisjunctiveForm();
             else if (selected.equals("Remove Useless Blocks")) removeUselessBlocks();
-            else if (selected.equals("Expansion Algorithm")) attemptToExpandIntervals(.05, -1);
+            else if (selected.equals("Expansion Algorithm")) attemptToExpandIntervals(.05, -1, false);
 
             // Add that the algo has run to the log.
             simplificationAlgoLog.add(selected);
@@ -3101,7 +3152,8 @@ public class HyperBlockGeneration
 
             for (int i = in_new.length - 1; i > -1; i--) {
                 if (in_new[i] == 0) {
-                    hyper_blocks.remove(i);
+                    // SAFE REMOVAL
+                    removeHB(i);
                 }
             }
 

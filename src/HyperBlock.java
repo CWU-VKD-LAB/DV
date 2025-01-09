@@ -26,6 +26,12 @@ public class HyperBlock
     ArrayList<ArrayList<Double>> minimums;
 
     /**
+     * This will hold the original position of the block
+     * in the hyper_blocks list. It
+     */
+    int originalPosition;
+
+    /**
      * Constructor for HyperBlock
      * @param hyper_block datapoints to go in hyperblock
      */
@@ -36,7 +42,7 @@ public class HyperBlock
         this.maximums = new ArrayList<>();
         this.minimums = new ArrayList<>();
         this.classNum = classNum;
-
+        this.originalPosition = -1;
         findBounds();
     }
 
@@ -80,7 +86,7 @@ public class HyperBlock
 
         this.maximums = new ArrayList<>();
         this.minimums = new ArrayList<>();
-
+        this.originalPosition = -1;
         findBounds();
     }
 
@@ -94,6 +100,7 @@ public class HyperBlock
     {
         setBounds(max, min);
         findData();
+        this.originalPosition = -1;
         this.classNum = classNum;
     }
 
