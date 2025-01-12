@@ -77,7 +77,7 @@ public class HyperBlockGeneration
     // panels 
     JPanel graphPanel;
     JPanel navPanel;
-
+    JPanel expansionPanel;
     // visualization options
     JLabel graphLabel;
     JButton right;
@@ -101,9 +101,6 @@ public class HyperBlockGeneration
 
     HyperBlockStatistics blockStats;
 
-    // Testing to see if i can use this to keep track of which block is which.
-    // When a block is removed statistics should know somehow which block went away to display right.
-    ArrayList<Integer> orderMimic = new ArrayList<>();
     HyperBlockGeneration() {
         // set purity threshold
         if (explain_ldf)
@@ -164,20 +161,11 @@ public class HyperBlockGeneration
     }
 
     /**
-     * Helper function to safely remove a hb from both the mimic and the actual list of hyper_blocks.
-     * @param hb The index of the block to be removed.
-     */
-    private void removeHB(int hb){
-        hyper_blocks.remove(hb);
-        //orderMimic.remove(hb);
-    }
-
-    /**
      * Attempt to expand the intervals then check if any points of other classes would fall into the blocks.
      * @param amount The amount to try to expand the block by, ex .05, or .1
      * @param hb_num The index in hyper_blocks of the block to attempt to expand. PASS A NEGATIVE TO EXPAND ALL BLOCKS.
      */
-    private void attemptToExpandIntervals(double amount, int hb_num, boolean keepEdgesReal){
+    private void attemptToExpandIntervals(double amount, int hb_num, boolean keepEdgesReal, boolean[] attributes){
         if(keepEdgesReal){
             expandWithRealEdges(hb_num);
             return;
@@ -370,7 +358,7 @@ public class HyperBlockGeneration
         sortedBlocksToBeRemoved.sort(Collections.reverseOrder());
         for(int i : sortedBlocksToBeRemoved){
             // SAFE WAY TO REMOVE A HYPER-BLOCK, WHILE UPDATING MIMIC FOR STATISTICS TRACKING
-            removeHB(i);
+            hyper_blocks.remove(i);
         }
         order_hbs_by_class();
     }
@@ -1585,6 +1573,10 @@ public class HyperBlockGeneration
         createNavPanel();
         mainFrame.add(navPanel, BorderLayout.PAGE_END);
 
+        // Make the interactive window
+        createExpansionPanel();
+        expansionPanel.setVisible(false);
+        mainFrame.add(expansionPanel, BorderLayout.EAST);
         mainFrame.setMinimumSize(new Dimension(DV.minSize[0], DV.minSize[1]));
 
         // show
@@ -1592,6 +1584,69 @@ public class HyperBlockGeneration
         mainFrame.revalidate();
         mainFrame.pack();
         mainFrame.repaint();
+    }
+
+    private void createExpansionPanel() {
+        expansionPanel = new JPanel();
+        expansionPanel.setPreferredSize(new Dimension(200, 600)); // Adjust size as needed
+        expansionPanel.setBorder(BorderFactory.createTitledBorder("Interactive Interval Expansion."));
+
+
+        expansionPanel.add(new JLabel("Expand Attributes"));
+        boolean[] checkBoxValues = new boolean[DV.fieldLength];
+        for(int i = 0; i < DV.fieldLength; i++){
+            // Make new checkbox for each attribute
+            JCheckBox attributeBox = new JCheckBox("x" + i + " : " + DV.fieldNames.get(i));
+
+            final int index = i;
+            attributeBox.addChangeListener(e ->{
+                checkBoxValues[index] = attributeBox.isSelected();
+            });
+            expansionPanel.add(attributeBox);
+        }
+
+        // Allow user to choose which attributes to expand
+
+        expansionPanel.add(new JLabel("Expand by: "));
+
+        // Allow user to enter number between 0.0 and 1.0 to attempt to expand by
+        SpinnerNumberModel model = new SpinnerNumberModel(0.05, 0.0, 1.0, 0.01);
+        JSpinner spinner = new JSpinner(model);
+        JSpinner.NumberEditor editor = new JSpinner.NumberEditor(spinner, "0.00");
+        spinner.setEditor(editor);
+        expansionPanel.add(spinner);
+
+        JCheckBox keepRealEdge = new JCheckBox("Keep edges as real point values.");
+        keepRealEdge.setToolTipText("Tries to expand mins/maxes to the closest real point value that increases range. Ensures interval edges are true cases.");
+        expansionPanel.add(keepRealEdge);
+
+        // Change current block or change current block option
+        JButton expandCurrent = new JButton("Expand Current Block");
+        expandCurrent.addActionListener(e->{
+            System.out.println("Expanding block " + visualized_block);
+            attemptToExpandIntervals((double) spinner.getValue(), visualized_block, keepRealEdge.isSelected(), checkBoxValues);
+            updateGraphs();
+            HB_analytics();
+        });
+
+        // The button to expand all the blocks at the same time by specified amount
+        JButton expandAll = new JButton("Expand All Blocks");
+        expandAll.addActionListener(e->{
+            System.out.println("Expanding all blocks.");
+            attemptToExpandIntervals((double) spinner.getValue(), -1, keepRealEdge.isSelected(), checkBoxValues);
+            updateGraphs();
+            HB_analytics();
+        });
+
+
+        expansionPanel.add(expandCurrent);
+        expansionPanel.add(expandAll);
+
+        // The button to hide the interactive panel.
+        JButton closeButton = new JButton("Close");
+        closeButton.addActionListener(e->{
+            expansionPanel.setVisible(false);
+        });
     }
 
     /**
@@ -1688,7 +1743,10 @@ public class HyperBlockGeneration
             if (selected.equals("Remove Useless Attributes")) removeUselessAttributes();
             else if (selected.equals("Create Disjunctive Blocks")) simplifyHBtoDisjunctiveForm();
             else if (selected.equals("Remove Useless Blocks")) removeUselessBlocks();
-            else if (selected.equals("Expansion Algorithm")) attemptToExpandIntervals(.05, -1, false);
+            else if (selected.equals("Expansion Algorithm")){
+                expansionPanel.setVisible(true);
+                //attemptToExpandIntervals(.05, -1, false);
+            }
 
             // Add that the algo has run to the log.
             simplificationAlgoLog.add(selected);
@@ -1927,6 +1985,7 @@ public class HyperBlockGeneration
                     }
                 }
             }
+            default -> graphPanel.add(PC_HB(data, visualized_block));
         }
 
         // Refresh the visualization
@@ -3152,8 +3211,7 @@ public class HyperBlockGeneration
 
             for (int i = in_new.length - 1; i > -1; i--) {
                 if (in_new[i] == 0) {
-                    // SAFE REMOVAL
-                    removeHB(i);
+                    hyper_blocks.remove(i);
                 }
             }
 

@@ -1,5 +1,6 @@
 import java.lang.reflect.Array;
 import java.util.*;
+import java.util.stream.Collectors;
 
 
 //TODO: Add HBs per class to statistics and comparisons
@@ -36,14 +37,12 @@ public class HyperBlockStatistics {
      * @param nonDistinctPointCounts The number of non-distinct points each HB holds. (ALLOWS DOUBLE COUNTING OF POINTS)
      * @param usedAttributesByClass The attributes that were used to classify each class.
      * @param usedAttributesPerBlock The attributes that were used to classify each block.
-     * @param orderMimic Starts as {0, 1, ..., initial # HBS - 1}, as blocks are removed we remove them from this too. It
-     *                   allows us to keep track of which block is which. ex {0, 1, 2} -> {1, 2}, we know block 0 was removed.
      */
     public record statisticSet(int totalDataPoints, int numBlocks, int[] numBlocksPerClass, int totalInBlocks, double coverage,
                                ArrayList<Integer> usedAttributes, int[] clauseCountsHBs, int totalClauses,
                                ArrayList<String> algoLog, int[] classClauseCounts, double[] averageSizeByClass,
                                double averageHBSize, int numSmallHBs, int[] nonDistinctPointCounts, ArrayList<ArrayList<Integer>> usedAttributesByClass,
-                               ArrayList<ArrayList<Integer>> usedAttributesPerBlock, int[] orderMimic
+                               ArrayList<ArrayList<Integer>> usedAttributesPerBlock
     ){}
 
     private ArrayList<statisticSet> statisticHistory;
@@ -227,58 +226,67 @@ public class HyperBlockStatistics {
         }
 
         System.out.print("\n\n\t= AFTER BLOCKS = ");
-        for (int i = 0; i < sAfter.usedAttributesPerBlock.size(); i++) {
-            int n = sAfter.usedAttributesPerBlock.get(i).size() - 1;
-            int last = sAfter.usedAttributesPerBlock.get(i).get(n);
-            System.out.printf("\n\tBlock #%d from class \"%s\" :", sAfter.usedAttributesPerBlock.get(i).get(n-1), DV.uniqueClasses.get(last));
+        int size = sBefore.usedAttributesPerBlock.size();
 
-            printIntervalCondensed(sAfter.usedAttributesPerBlock.get(i).subList(0, n-1));
-        }
+        // Create set of unique IDs present in sAfter for quick lookup
+        Set<Integer> afterBlockIds = sAfter.usedAttributesPerBlock.stream()
+                .map(block -> block.get(block.size() - 2)) // Get unique ID
+                .collect(Collectors.toSet());
 
-        //TODO: I NEED TO GO THROUGH THE BEFORE AND BE SAFE WITH CHECKS TO BE SURE I COVER ALL BLOCKS.
+        // Iterate through all blocks (0 to size - 1)
+        for (int i = 0; i < size; i++) {
+            if (afterBlockIds.contains(i)) {
+                // Block exists in sAfter, retrieve it
+                int finalI = i;
+                ArrayList<Integer> block = sAfter.usedAttributesPerBlock.stream()
+                        .filter(b -> b.get(b.size() - 2) == finalI)
+                        .findFirst()
+                        .orElse(null);
 
-        /*
-        int lastPrinted = -1;
-        for(int i = 0; i < sAfter.usedAttributesPerBlock.size(); i++){
-            int last = sAfter.usedAttributesPerBlock.get(i).size() - 1;
-            // Class is the second-to-last element
-            int hbClass = sAfter.usedAttributesPerBlock.get(i).get(last);
-            // Original position is the last element
-            int oPos = sAfter.usedAttributesPerBlock.get(i).get(last - 1);
+                if (block != null) {
+                    int n = block.size() - 1;
+                    int classIndex = block.get(n);
+                    String className = (classIndex >= 0 && classIndex < DV.uniqueClasses.size())
+                            ? DV.uniqueClasses.get(classIndex)
+                            : "Unknown";
 
-            // If we deleted blocks. we need to show that.
-            while (i < oPos) {
-                System.out.printf("BLOCK %d: DELETED", i);
-                i++;
-            }
-
-            if(i >= sAfter.usedAttributesPerBlock.size()){
-                lastPrinted = i;
-                break;
-            }
-
-
-            if (oPos == i) {
-                // Print details for the block if original position matches i
-                System.out.printf("BLOCK %d, CLASS \"%s\" : ", i, DV.uniqueClasses.get(hbClass));
-                //System.out.printf("BLOCK %d from class %s : %s", i, DV.uniqueClasses.get(hbClass), sAfter.usedAttributesPerBlock.get(i));
-                for(int a = 0; a < last - 1; a++){
-                    System.out.printf("x%d, ", sAfter.usedAttributesPerBlock.get(i).get(a));
+                    System.out.printf("\n\tBlock #%d from class \"%s\" :", i, className);
+                    printIntervalCondensed(block.subList(0, n - 1));
                 }
-                System.out.println();
+            } else {
+                // If block was removed.
+                System.out.printf("\n\tBlock #%d is DELETED.", i);
             }
-
-            lastPrinted = i;
         }
 
+        System.out.print("\n\n= ATTRIBUTES REMOVED BETWEEN BEFORE/AFTER BY BLOCK =");
+        for (ArrayList<Integer> afterBlock : sAfter.usedAttributesPerBlock) {
+            // Extract unique ID and class from the afterBlock
+            int uniqueId = afterBlock.get(afterBlock.size() - 2);
+            int bClass = afterBlock.get(afterBlock.size() - 1);
 
-        for(int i = lastPrinted + 1; i < sBefore.usedAttributesPerBlock.size(); i++){
-            System.out.printf("BLOCK %d: DELETED\n", i);
+            // Find the corresponding block in sBefore
+            ArrayList<Integer> beforeBlock = sBefore.usedAttributesPerBlock.stream()
+                    .filter(block -> block.get(block.size() - 2) == uniqueId)
+                    .findFirst()
+                    .orElse(null);
+
+            if (beforeBlock != null) {
+                // Extract attributes (excluding last two elements)
+                Set<Integer> beforeAttributes = new HashSet<>(beforeBlock.subList(0, beforeBlock.size() - 2));
+                Set<Integer> afterAttributes = new HashSet<>(afterBlock.subList(0, afterBlock.size() - 2));
+
+                // Find removed attributes (present in before but not in after)
+                beforeAttributes.removeAll(afterAttributes);
+
+                // Convert the Set to a List
+                List<Integer> removedAttributes = new ArrayList<>(beforeAttributes);
+
+                // Print block ID, class, and removed attributes
+                System.out.printf("\n\tBlock #%d (Class %s) attributes that were removed: ", uniqueId, DV.uniqueClasses.get(bClass));
+                printIntervalCondensed(removedAttributes);
+            }
         }
-        */
-
-
-
 
         System.out.println("\n");
     }
@@ -403,29 +411,15 @@ public class HyperBlockStatistics {
         int numSmallHBs = numberOfSmallBlocks(nonDistinctPointCounts, 5);
         ArrayList<ArrayList<Integer>> usedAttributesByClass = findImportantAttributesForClasses();
         ArrayList<ArrayList<Integer>> usedAttributesPerBlock = attributesPerHB();
-        int[] orderMimic = copyOrderMimic();
+
 
         //averageSizeByClass, averageHBSize, numSmallHBs, nonDistinctPointCounts, usedAttributesByClass
         // Sorry.
         return new statisticSet(totalDataPoints, numBlocks,numBlocksPerClass, totalInBlocks, coverage,
                 usedAttributes,clauseCountsHBs, totalClauses, algoLog, classClauseCounts,
-                averageSizeByClass, averageHBSize, numSmallHBs, nonDistinctPointCounts, usedAttributesByClass, usedAttributesPerBlock, orderMimic);
+                averageSizeByClass, averageHBSize, numSmallHBs, nonDistinctPointCounts, usedAttributesByClass, usedAttributesPerBlock);
     }
 
-    /**
-     * Make a copy of the current order mimic state.
-     * @return int[] with numbers that are original block indices. ex {0,1,2,3} --- > {1,2} then we know 0 and 3 were removed.
-     */
-    private int[] copyOrderMimic(){
-        int n = hbGen.orderMimic.size();
-        int[] orderMimic = new int[n];
-
-        for(int i = 0; i < n; i++){
-            orderMimic[i] = hbGen.orderMimic.get(i);
-        }
-
-        return orderMimic;
-    }
 
     /**
      * Finds the number of hyper-blocks per class.
