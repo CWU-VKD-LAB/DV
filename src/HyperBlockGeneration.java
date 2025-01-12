@@ -529,7 +529,24 @@ public class HyperBlockGeneration
             maxes.get(k).add(interval.end);
         }
     }
+    private void removeUselessAttributesCUDA(){
+        // Initialize JCuda
+        JCudaDriver.setExceptionsEnabled(true);
+        cuInit(0);
 
+        // Create a context
+        CUdevice device = new CUdevice();
+        cuDeviceGet(device, 0);
+        CUcontext context = new CUcontext();
+        cuCtxCreate(context, 0, device);
+
+        // Load the kernel
+        CUmodule module1 = new CUmodule();
+        cuModuleLoad(module1, ".\\src\\SimplificationsKernels.ptx");
+        CUfunction removeUselessHelper = new CUfunction();
+        cuModuleGetFunction(removeUselessHelper, module1, "removeUselessHelper");
+
+    }
     public void removeUselessAttributes()
     {
 
