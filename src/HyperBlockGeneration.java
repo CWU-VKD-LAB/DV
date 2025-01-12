@@ -78,6 +78,7 @@ public class HyperBlockGeneration
     JPanel graphPanel;
     JPanel navPanel;
     JPanel expansionPanel;
+    JScrollPane expansionScroll;
     // visualization options
     JLabel graphLabel;
     JButton right;
@@ -138,7 +139,8 @@ public class HyperBlockGeneration
         //test_HBs();
     }
 
-    public void expandWithRealEdges(int hb_num){
+    public void expandWithRealEdges(int hb_num, boolean[] attributes){
+        System.out.println("Expanding with real edges.");
         int start = 0;
         int stop = hyper_blocks.size();
 
@@ -148,15 +150,132 @@ public class HyperBlockGeneration
         }
 
         // Take the hyper-block we are currently on.
-            //for maxes: find a point of same class that has closest value > the current max
+            //for maximums: find a point of same class that has closest value > the current max
                 // try to expand to that value for the max
-                    // check the integrity of hb
-            //for mins: find a point of the same class that has closest value < the current min
+                    // check if block is still pure
+            //for minimums: find a point of the same class that has closest value < the current min
                 // try to expand
+                    // check if the block is still pure.
 
 
         for(int hb = start; hb < stop; hb++){
+            HyperBlock block = hyper_blocks.get(hb);
 
+            for(int attr = 0; attr < attributes.length; attr++){
+                // If they dont want to attempt to expand this attribute, skip.
+                if(!attributes[attr]){
+                    continue;
+                }
+
+                // We know they want to try to expand the attribute.
+                ///
+                for(int i = 0; i < block.maximums.get(attr).size(); i++){
+                    // We should attempt to expand both sides of this interval.
+                    double old_max = block.maximums.get(attr).get(i);
+
+                    // The new block bounds should be a close
+
+                    // Go through all the rows of the points that are in the same class
+                    double new_max = Integer.MAX_VALUE;
+                    for(int m = 0; m < data.get(block.classNum).data.length; m++){
+                        double val = data.get(block.classNum).data[m][attr];
+                        if(val > old_max && val < new_max){
+                            new_max = val;
+                        }
+                    }
+
+                    // This means we found no points to expand up to, go to next interval on this attribute.
+                    if(new_max == Integer.MAX_VALUE){
+                        continue;
+                    }
+
+                    // Set the interval
+                    block.maximums.get(attr).set(i, new_max);
+                    //block.minimums.get(attr).set(i, new_min);
+
+                    // we now need to make sure the block is still pure.
+                    ///////////////////////////////////////////////////////////////
+                    // Go through all the data of other classes, check if it would fall into the new bounds of merged disjunctive block.
+                    int classNum = block.classNum;
+                    boolean doExpanse = true;
+                    for(int k = 0; k < data.size(); k++) {
+
+                        // skip data of same class
+                        if(classNum == k){
+                            continue;
+                        }
+
+                        for (double[] point : data.get(k).data) {
+                            // Check if the point is within the MEGA BLOCK
+                            if(inside_HB(hb, point)){
+                                doExpanse = false;
+                                break;
+                            }
+                        }
+
+                        if(!doExpanse){break;}
+                    }
+
+                    // Undo the expanse on this interval.
+                    if(!doExpanse) {
+                        block.maximums.get(attr).set(i, old_max);
+                    }
+                }
+
+                ///////// MINIMUMS PART
+                for(int i = 0; i < block.minimums.get(attr).size(); i++){
+                    // We should attempt to expand both sides of this interval.
+                    double old_min = block.minimums.get(attr).get(i);
+
+                    // The new block bounds should be a close
+
+                    // Go through all the rows of the points that are in the same class
+                    double new_min = Integer.MIN_VALUE;
+                    for(int m = 0; m < data.get(block.classNum).data.length; m++){
+                        double val = data.get(block.classNum).data[m][attr];
+                        if(val < old_min && val > new_min){
+                            new_min = val;
+                        }
+                    }
+                    System.out.println("Attempting to downward expand to: " + new_min + " attribute: " + attr);
+
+                    // This means we found no points to expand up to, go to next interval on this attribute.
+                    if(new_min == Integer.MIN_VALUE){
+                        continue;
+                    }
+
+                    // Set the interval
+                    block.minimums.get(attr).set(i, new_min);
+
+                    // we now need to make sure the block is still pure.
+                    ///////////////////////////////////////////////////////////////
+                    // Go through all the data of other classes, check if it would fall into the new bounds of merged disjunctive block.
+                    int classNum = block.classNum;
+                    boolean doExpanse = true;
+                    for(int k = 0; k < data.size(); k++) {
+
+                        // skip data of same class
+                        if(classNum == k){
+                            continue;
+                        }
+
+                        for (double[] point : data.get(k).data) {
+                            // Check if the point is within the MEGA BLOCK
+                            if(inside_HB(hb, point)){
+                                doExpanse = false;
+                                break;
+                            }
+                        }
+
+                        if(!doExpanse){break;}
+                    }
+
+                    // Undo the expanse on this interval.
+                    if(!doExpanse) {
+                        block.minimums.get(attr).set(i, old_min);
+                    }
+                }
+            }
         }
     }
 
@@ -167,10 +286,11 @@ public class HyperBlockGeneration
      */
     private void attemptToExpandIntervals(double amount, int hb_num, boolean keepEdgesReal, boolean[] attributes){
         if(keepEdgesReal){
-            expandWithRealEdges(hb_num);
+            expandWithRealEdges(hb_num, attributes);
             return;
         }
 
+        System.out.println("Made it past the keep edge real thingy.");
         int start = 0;
         int stop = hyper_blocks.size();
 
@@ -1575,8 +1695,8 @@ public class HyperBlockGeneration
 
         // Make the interactive window
         createExpansionPanel();
-        expansionPanel.setVisible(false);
-        mainFrame.add(expansionPanel, BorderLayout.EAST);
+        expansionScroll.setVisible(false);
+        mainFrame.add(expansionScroll, BorderLayout.EAST);
         mainFrame.setMinimumSize(new Dimension(DV.minSize[0], DV.minSize[1]));
 
         // show
@@ -1588,15 +1708,19 @@ public class HyperBlockGeneration
 
     private void createExpansionPanel() {
         expansionPanel = new JPanel();
-        expansionPanel.setPreferredSize(new Dimension(200, 600)); // Adjust size as needed
+        expansionPanel.setPreferredSize(new Dimension(200, 1080));
         expansionPanel.setBorder(BorderFactory.createTitledBorder("Interactive Interval Expansion."));
-
+        expansionPanel.setVisible(true);
 
         expansionPanel.add(new JLabel("Expand Attributes"));
         boolean[] checkBoxValues = new boolean[DV.fieldLength];
         for(int i = 0; i < DV.fieldLength; i++){
             // Make new checkbox for each attribute
             JCheckBox attributeBox = new JCheckBox("x" + i + " : " + DV.fieldNames.get(i));
+
+            // Default all to true, since more likely.
+            attributeBox.setSelected(true);
+            checkBoxValues[i] = true;
 
             final int index = i;
             attributeBox.addChangeListener(e ->{
@@ -1642,11 +1766,18 @@ public class HyperBlockGeneration
         expansionPanel.add(expandCurrent);
         expansionPanel.add(expandAll);
 
-        // The button to hide the interactive panel.
         JButton closeButton = new JButton("Close");
         closeButton.addActionListener(e->{
-            expansionPanel.setVisible(false);
+            expansionScroll.setVisible(false);
         });
+
+        // The button to hide the interactive panel.
+        expansionPanel.add(closeButton);
+
+
+        expansionScroll = new JScrollPane(expansionPanel);
+        expansionScroll.setPreferredSize(new Dimension(220, 600));
+        expansionScroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);
     }
 
     /**
@@ -1744,7 +1875,7 @@ public class HyperBlockGeneration
             else if (selected.equals("Create Disjunctive Blocks")) simplifyHBtoDisjunctiveForm();
             else if (selected.equals("Remove Useless Blocks")) removeUselessBlocks();
             else if (selected.equals("Expansion Algorithm")){
-                expansionPanel.setVisible(true);
+                expansionScroll.setVisible(true);
                 //attemptToExpandIntervals(.05, -1, false);
             }
 

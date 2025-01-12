@@ -47,7 +47,7 @@ public class HyperBlockStatistics {
 
     private ArrayList<statisticSet> statisticHistory;
 
-    boolean debug = false;
+    boolean debug = true;
 
     public HyperBlockStatistics(HyperBlockGeneration hbGen){
         this.hbGen = hbGen;
@@ -59,7 +59,7 @@ public class HyperBlockStatistics {
 
         // Generate stats for the initially generated blocks.
         updateHyperBlockStatistics();
-        auto();
+        //auto();
     }
 
     public void auto(){
@@ -107,6 +107,9 @@ public class HyperBlockStatistics {
      */
     private void compareStatistics(int before, int after) {
         System.out.println(statisticHistory.size() - 1 + "is the last index of the set");
+        for(int i = 0; i < statisticHistory.size(); i++){
+            System.out.println(i + " : " + statisticHistory.get(i).algoLog);
+        }
         if (debug) {
             Scanner scan = new Scanner(System.in);
             System.out.println("Before: ");
@@ -140,6 +143,7 @@ public class HyperBlockStatistics {
         System.out.println("\n=== BLOCKS ===");
         System.out.printf("\t%-25s %d ---> %d\n", "Total number blocks :", sBefore.numBlocks, sAfter.numBlocks);
         System.out.printf("\t%.2f%% fewer blocks.\n\n", blockChange);
+        System.out.println("Coverage: " + sAfter.coverage);
         System.out.println("=== BLOCKS BY CLASS ===");
 
         // Print these numbers by class
