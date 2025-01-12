@@ -3276,98 +3276,87 @@ public class HyperBlockGeneration
     }
 
     //TODO: MAKE SURE CLASS CHECK NOT NEEDED
-    public void removeUselessBlocks(){
+    public void removeUselessBlocks() {
+        // Map to store each block's points, keyed by the block index
+        Map<Integer, List<double[]>> blockToPoints = new HashMap<>();
 
-        // Keep track of distinct points in each block.
-        int[] in = new int[hyper_blocks.size()];
 
-        for(int i = 0; i < data.size(); i++){
-            // Go through each data point
-            for(int j = 0; j < data.get(i).data.length; j++){
+        // Initialize the map with empty lists for each block
+        for (int i = 0; i < hyper_blocks.size(); i++) {
+            blockToPoints.put(i, new ArrayList<>());
+        }
+
+        // Populate blockToPoints with points claimed by each block
+        for (int i = 0; i < data.size(); i++) {
+            for (int j = 0; j < data.get(i).data.length; j++) {
                 double[] point = data.get(i).data[j];
-
-                ArrayList<Integer> potentialHomes = new ArrayList<>();
-
-                // Go through all blocks and let them claim a point
-                for(int hb = 0; hb < hyper_blocks.size(); hb++){
-                    // If it is inside a block, let them claim it and keep away from other blocks.
-
-                    if(inside_HB(hb, point)){
-
-                        potentialHomes.add(hb);
+                for (int hb = 0; hb < hyper_blocks.size(); hb++) {
+                    if (inside_HB(hb, point)) {
+                        blockToPoints.get(hb).add(point);
+                        break; // Stop after the point is claimed
                     }
-                }
-
-                int bestBlock = -1;
-                int biggestBlock = -1;
-                for (Integer blockToChoose : potentialHomes){
-                    if (in[blockToChoose] > biggestBlock) {
-                        bestBlock = blockToChoose;
-                        biggestBlock = in[blockToChoose];
-                    }
-                }
-
-                if(bestBlock >= 0){
-                    in[bestBlock]++;
                 }
             }
         }
 
-
-        while(true) {
-            // this point wants to go into blocks 2, 3, 4. pick whichever has biggest in value now.
-            // this way, if a large block missed out on a point previously, it gets a second chance
-            int size = hyper_blocks.size();
-            int[] in_new = new int[size];
-
-            // if a block gets deleted, run it again.
-            // run until no blocks can be deleted.
-
-            /////
-            for(int i = 0; i < data.size(); i++){
-                // Go through each data point
-                for(int j = 0; j < data.get(i).data.length; j++){
-                    double[] point = data.get(i).data[j];
-
-                    ArrayList<Integer> potentialHomes = new ArrayList<>();
-
-                    // Go through all blocks and let them claim a point
-                    for(int hb = 0; hb < hyper_blocks.size(); hb++){
-                        // If it is inside a block, let them claim it and keep away from other blocks.
-
-                        if(inside_HB(hb, point)){
-                            potentialHomes.add(hb);
-                        }
-                    }
+        // Consolidate points into larger blocks
+        List<Integer> sortedBlocks = new ArrayList<>(blockToPoints.keySet());
+        sortedBlocks.sort((b1, b2) -> Integer.compare(blockToPoints.get(b1).size(), blockToPoints.get(b2).size()));
 
 
-                    int bestBlock = -1;
-                    int biggestBlock = -1;
-                    for (Integer blockToChoose : potentialHomes){
-                        if (in[blockToChoose] > biggestBlock) {
-                            bestBlock = blockToChoose;
-                            biggestBlock = in[blockToChoose];
-                        }
-                    }
+        for (int i = 0; i < sortedBlocks.size(); i++) {
+            int smallerBlock = sortedBlocks.get(i);
+            List<double[]> smallerBlockPoints = blockToPoints.get(smallerBlock);
 
-                    if(bestBlock >= 0){
-                        in_new[bestBlock]++;
+            for (int j = i + 1; j < sortedBlocks.size(); j++) {
+                int largerBlock = sortedBlocks.get(j);
+                List<double[]> largerBlockPoints = blockToPoints.get(largerBlock);
+
+                for (int p = smallerBlockPoints.size() - 1; p >= 0; p--) {
+                    double[] point = smallerBlockPoints.get(p);
+                    if (inside_HB(largerBlock, point)) {
+                        largerBlockPoints.add(smallerBlockPoints.remove(p));
                     }
                 }
             }
-            /////
+        }
 
-            for (int i = in_new.length - 1; i > -1; i--) {
-                if (in_new[i] == 0) {
-                    hyper_blocks.remove(i);
+        // now that pushed all our points upstream if they fit in someone elses block, the fun case.
+        // we come back down the mountain, and see if any of the blocks upstream can actually give ALL of their points to someone else
+        // if so, give them up and you're gone.
+
+        //TODO: make it so that we check whether a block can give it's points back away to mulitple other blocks.
+        for(int startBlock = blockToPoints.size() - 1; startBlock >= 0; startBlock--) {
+            for (int targetBlock = startBlock - 1; targetBlock >= 0; targetBlock--) {
+
+                int finalTargetBlock = targetBlock;
+                boolean canMoveAllPoints = blockToPoints.get(startBlock).stream().allMatch(point -> inside_HB(finalTargetBlock, point));
+                if (canMoveAllPoints) {
+                    // Transfer all points
+                }
+
+                if (canMoveAllPoints){
+                    // take everyone out of start block and stuff them into the other guy.
+                    for(int i = blockToPoints.get(startBlock).size() - 1; i >= 0; i--){
+                        // add the point to target block from start block
+                        // adds to target block, the thing we are removing from start block
+                        blockToPoints.get(targetBlock).add(blockToPoints.get(startBlock).remove(i));
+                    }
+                    // break here so that we don't bother checking against any more blocks
+                    break;
                 }
             }
+        }
 
-            if (hyper_blocks.size() == size) {
-                break;
+        // Remove blocks with no points (back-to-front)
+        List<Integer> blockIndices = new ArrayList<>(blockToPoints.keySet());
+        blockIndices.sort(Collections.reverseOrder()); // Sort in descending order
+
+        for (int blockIndex : blockIndices) {
+            if (blockToPoints.get(blockIndex).isEmpty()) {
+                hyper_blocks.remove(blockIndex); // Remove the block
+                blockToPoints.remove(blockIndex); // Remove the corresponding entry from the map
             }
-
-            in = in_new;
         }
     }
 
