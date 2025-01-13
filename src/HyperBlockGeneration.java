@@ -122,12 +122,6 @@ public class HyperBlockGeneration
             hb.originalPosition = i;
         }
 
-        Double[][] test = flattenMinsMaxesForCUDA();
-        for (Double[] x : test) {
-            System.out.println(Arrays.toString(x));
-        }
-
-
         blockStats = new HyperBlockStatistics(this);
         // k-fold used to be here
         //test_HBs();
@@ -641,8 +635,6 @@ public class HyperBlockGeneration
             int classNum = tempBlock.classNum;
             ArrayList<ArrayList<Double>> mins = new ArrayList<>(tempBlock.minimums);
             ArrayList<ArrayList<Double>> maxes = new ArrayList<>(tempBlock.maximums);
-            System.out.println(mins);
-            System.out.println(maxes);
 
             // removed represents one particular attribute which we want to try and remove
             for (int removed = 0; removed < maxes.size(); removed++){
