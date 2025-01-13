@@ -2,29 +2,17 @@ import org.jfree.chart.*;
 import org.jfree.chart.axis.NumberAxis;
 import org.jfree.chart.axis.NumberTickUnit;
 import org.jfree.chart.axis.ValueAxis;
-import org.jfree.chart.plot.CategoryPlot;
-import org.jfree.chart.plot.PlotOrientation;
 import org.jfree.chart.plot.XYPlot;
-import org.jfree.chart.renderer.category.BarRenderer;
 import org.jfree.chart.renderer.xy.XYAreaRenderer;
-import org.jfree.chart.renderer.xy.XYBlockRenderer;
 import org.jfree.chart.renderer.xy.XYLineAndShapeRenderer;
-import org.jfree.data.category.DefaultCategoryDataset;
-import org.jfree.data.xy.DefaultXYZDataset;
 import org.jfree.data.xy.XYSeries;
 import org.jfree.data.xy.XYSeriesCollection;
 
-import javax.imageio.ImageIO;
 import javax.swing.*;
 import java.awt.*;
 import java.awt.geom.Ellipse2D;
-import java.awt.geom.Rectangle2D;
-import java.awt.image.AreaAveragingScaleFilter;
 import java.awt.image.BufferedImage;
 import java.io.*;
-import java.nio.file.Files;
-import java.sql.Array;
-import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.List;
 import java.util.concurrent.*;
@@ -518,7 +506,7 @@ public class HyperBlockGeneration
         maxes.get(k).clear();
 
         for (Interval interval : mergedIntervals) {
-            if (interval.start == 0 && interval.end == 1.0){
+            if (interval.start == 0 && interval.end == 1.0) {
                 mins.get(k).clear();
                 maxes.get(k).clear();
                 mins.get(k).add(interval.start);
@@ -529,7 +517,15 @@ public class HyperBlockGeneration
             maxes.get(k).add(interval.end);
         }
     }
+
     private void removeUselessAttributesCUDA(){
+        // CUDA PLAN:
+        // Keep two double arrays for mins and maxes for all blocks
+        // double[] mins:
+        // double[] maxes:
+        // int[] blockEdges, tells us where a block begins, the i + 1 element in this tells us where next block begins. ex [0, 7, 12], first block is in [0-6], 2nd in [7-11], 3rd in [12 - end_of_list]
+        // char[] attrRemoveFlags: flags for attributes to be removed from each block. will have flags for all hbs. ex [1,1,1,0,0,0]
+
         // Initialize JCuda
         JCudaDriver.setExceptionsEnabled(true);
         cuInit(0);
@@ -546,7 +542,89 @@ public class HyperBlockGeneration
         CUfunction removeUselessHelper = new CUfunction();
         cuModuleGetFunction(removeUselessHelper, module1, "removeUselessHelper");
 
+
+        // Return pointer to array of HB.num, and which attributes can be removed.
+        // [7, 1, 1, 1, 0, 0], indicates for block 7, we can remove x0, x1, x2,
     }
+
+
+    /**
+     * This function will flatten the mins and maxes passed into it into a 1-D array for use in CUDA.
+     *
+     * Example minimums 2-d arraylist could have "{{1}, {1,0}}" meaning attr x0 has 1 min value (1), attr x1 has 2 possible mins (1 or 0).
+     *
+     * We would then encode by indicating how many mins are on an attribute (in this case 1 and 2).
+     * following the number we would put the original values from the 2-d arraylist.
+     *
+     *  ex. [1, 1, 2, 1, 0]
+     * Index 0 element says there is 1 min for the first attribute, then the index 2 element says there is 2 possible mins for the second attribute.
+     */
+    private Double[][] flattenMinsMaxesForCUDA() {
+
+        ArrayList<Double> flatMinsList = new ArrayList<>();
+        ArrayList<Double> flatMaxesList = new ArrayList<>();
+        ArrayList<Double> blockEdges = new ArrayList<>();
+        Double[] blockClasses = new Double[hyper_blocks.size()];
+
+        // First block starts at 0.
+        blockEdges.add(0.0);
+
+        // go through and add all blocks mins and maxes list. along with adding in an int to tell how many numbers there are for that particular attribute
+        for(int hb = 0; hb < hyper_blocks.size(); hb++) {
+            HyperBlock block = hyper_blocks.get(hb);
+            blockClasses[hb] = (double) block.classNum;
+
+            int blockLength = 0;
+            // Go through each attribute of mins
+            for (int m = 0; m < block.minimums.size(); m++) {
+
+                // Number of possible MIN/MAX ors for the attribute
+                double numIntervals = block.minimums.get(m).size();
+
+                // Add to block total size
+                blockLength += (int) numIntervals;
+                flatMinsList.add(numIntervals);
+                flatMinsList.addAll(block.minimums.get(m));
+
+                // DO FOR MAXES NOW!
+                flatMaxesList.add(numIntervals);
+                flatMaxesList.addAll(block.maximums.get(m));
+            }
+            // add this length to the last index, to tell where to find the next block
+            blockEdges.add(blockLength + blockEdges.get(blockEdges.size() - 1) + DV.fieldLength);
+
+        }
+
+        Double[] flatMinsArray = new Double[flatMinsList.size()];
+        Double[] flatMaxesArray = new Double[flatMaxesList.size()];
+        Double[] blockEdgesArray = new Double[blockEdges.size()];     // block edges array is going to have one more entry than necessary. the last block puts in it's ending index as well.
+
+        flatMinsList.toArray(flatMinsArray);
+        flatMaxesList.toArray(flatMaxesArray);
+        blockEdges.toArray(blockEdgesArray);
+
+        // Now return the arrays
+        return new Double[][] {flatMinsArray, flatMaxesArray, blockEdgesArray, blockClasses};
+    }
+
+    private Double[][] flattenDataset(){
+        ArrayList<Double> dataset = new ArrayList<>();
+        Double[] classBorder = new Double[DV.uniqueClasses.size() + 1];
+        classBorder[0] = 0.0;
+
+        // add each point to the dataset list attribute by attribute
+        for(int classN = 0; classN < data.size(); classN++) {
+            classBorder[classN] = (double) data.get(classN).data.length;
+            for(double[] point : data.get(classN).data)
+                for(double attribute : point)
+                    dataset.add(attribute);
+        }
+        Double[] datasetArray = new Double[dataset.size()];
+
+        // IMPLEMENT ME
+        return new Double[][]{datasetArray, classBorder};
+    }
+
     public void removeUselessAttributes()
     {
 
