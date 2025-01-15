@@ -24,7 +24,6 @@ import jcuda.driver.*;
 
 import static jcuda.driver.JCudaDriver.*;
 
-
 public class HyperBlockGeneration
 {
     /************************************************************
@@ -122,6 +121,7 @@ public class HyperBlockGeneration
             hb.originalPosition = i;
         }
 
+        //removeUselessAttributesCUDA();
         blockStats = new HyperBlockStatistics(this);
         // k-fold used to be here
         //test_HBs();
@@ -524,7 +524,15 @@ public class HyperBlockGeneration
         // double[] mins:
         // double[] maxes:
         // int[] blockEdges, tells us where a block begins, the i + 1 element in this tells us where next block begins. ex [0, 7, 12], first block is in [0-6], 2nd in [7-11], 3rd in [12 - end_of_list]
+        // int[] blockClasses: keeps track of which class each block is. [0] says element at 0 is class 0
         // char[] attrRemoveFlags: flags for attributes to be removed from each block. will have flags for all hbs. ex [1,1,1,0,0,0]
+        // int fieldLength: the length of a single point in the dataset.
+
+        // PUT IN GLOBAL MEMORY?
+        // double[] dataset
+        // int[] classBorder: The borders of the points in the classes ex: [0, 20, 100] class 1 from 0-19, class 2 20-99
+
+        long startTime = System.nanoTime();
 
         // Initialize JCuda
         JCudaDriver.setExceptionsEnabled(true);
@@ -542,6 +550,134 @@ public class HyperBlockGeneration
         CUfunction removeUselessHelper = new CUfunction();
         cuModuleGetFunction(removeUselessHelper, module1, "removeUselessHelper");
 
+
+
+        //flattenMinMaxes: return new Double[][] {flatMinsArray, flatMaxesArray, blockEdgesArray, blockClasses, };
+        //Double[][]{datasetArray, classBorder};
+        //CudaUtil.allocateAndCopy();
+        Double[][] fMinMaxResult = minsMaxFlatCUDANEW();
+        Double[][] fDataResult = flattenDataset();
+
+
+        // Host variables
+        double[] mins = new double[fMinMaxResult[0].length];
+        for(int i = 0; i < fMinMaxResult[0].length; i++){
+            mins[i] = fMinMaxResult[0][i];
+        }
+
+        double[] maxes = new double[fMinMaxResult[1].length];
+        for(int i = 0; i < fMinMaxResult[1].length; i++){
+            maxes[i] = fMinMaxResult[1][i];
+        }
+
+        int minMaxLen = mins.length;
+
+        int[] blockEdges = new int[fMinMaxResult[2].length];
+        for(int i = 0; i < fMinMaxResult[2].length; i++){
+            blockEdges[i] = fMinMaxResult[2][i].intValue();
+        }
+        int numBlocks = hyper_blocks.size();
+
+        int[] blockClasses = new int[fMinMaxResult[3].length];
+        for(int i = 0; i < fMinMaxResult[3].length; i++){
+            blockClasses[i] = fMinMaxResult[3][i].intValue();
+        }
+
+        int[] intervalCounts = new int[fMinMaxResult[4].length];
+        for(int i = 0; i < fMinMaxResult[4].length; i++){
+            intervalCounts[i] = fMinMaxResult[4][i].intValue();
+        }
+
+
+        byte[] attrRemoveFlags = new byte[hyper_blocks.size() * DV.fieldLength];
+
+        double[] dataset = new double[fDataResult[0].length];
+        for(int i = 0; i < fDataResult[0].length; i++){
+            dataset[i] = fDataResult[0][i];
+        }
+
+        int numPoints = dataset.length / DV.fieldLength;
+
+        int[] classBorder = new int[fDataResult[1].length];
+        for(int i = 0; i < fDataResult[1].length; i++){
+            classBorder[i] = fDataResult[1][i].intValue();
+        }
+
+        CUdeviceptr d_mins = CudaUtil.allocateAndCopy(mins, Sizeof.DOUBLE);
+        CUdeviceptr d_maxes = CudaUtil.allocateAndCopy(maxes, Sizeof.DOUBLE);
+        CUdeviceptr d_blockEdges = CudaUtil.allocateAndCopy(blockEdges, Sizeof.INT);
+        CUdeviceptr d_blockClasses = CudaUtil.allocateAndCopy(blockClasses, Sizeof.INT);
+        CUdeviceptr d_attrRemoveFlags = CudaUtil.allocateAndCopy(attrRemoveFlags, Sizeof.BYTE);
+        CUdeviceptr d_dataset = CudaUtil.allocateAndCopy(dataset, Sizeof.DOUBLE);
+        CUdeviceptr d_classBorder = CudaUtil.allocateAndCopy(classBorder, Sizeof.INT);
+        CUdeviceptr d_intervalCounts = CudaUtil.allocateAndCopy(intervalCounts, Sizeof.INT);
+
+
+        //mins, maxes, minMaxLen, blockEdges, numBlocks, int* blockClasses, char* attrRemoveFlags, int fieldLen, double* dataset, int numPoints, int* classBorder, int numClasses){
+        Pointer kernelParameters = Pointer.to(
+                Pointer.to(d_mins),
+                Pointer.to(d_maxes),
+                Pointer.to(d_intervalCounts),
+                Pointer.to(new int[]{minMaxLen}),
+                Pointer.to(d_blockEdges),
+                Pointer.to(new int[]{numBlocks}),
+                Pointer.to(d_blockClasses),
+                Pointer.to(d_attrRemoveFlags),
+                Pointer.to(new int[]{DV.fieldLength}),
+                Pointer.to(d_dataset),
+                Pointer.to(new int[]{numPoints}),
+                Pointer.to(d_classBorder),
+                Pointer.to(new int[]{hyper_blocks.size()})
+        );
+
+
+        int blockSize = 0;
+        // 1024 threads for
+        if(hyper_blocks.size() < 1024){
+            while(blockSize < hyper_blocks.size()){
+                blockSize += 32;
+            }
+        }else{
+            blockSize = 1024;
+        }
+
+        int gridSize = (int) Math.ceil((double)hyper_blocks.size() / 1024);
+
+        //System.out.println("Grid Size:" + gridSize);
+        //System.out.println("Block Size:" + blockSize);
+        int bytesForBlockFlags = hyper_blocks.size() * DV.fieldLength * Sizeof.BYTE;
+
+        // Launch the kernel
+        cuLaunchKernel(removeUselessHelper,
+                gridSize, 1, 1,     // Grid size (in blocks)
+                blockSize, 1, 1,   // Block size (in threads)
+                0, null,                      // Shared memory size and stream
+            kernelParameters, null
+        );
+
+        cuCtxSynchronize();
+
+
+        // Copy the changed flags back from the device.
+        cuMemcpyDtoH(Pointer.to(attrRemoveFlags), d_attrRemoveFlags, bytesForBlockFlags);
+
+        // Free up the memory.
+        cuMemFree(d_mins);
+        cuMemFree(d_maxes);
+        cuMemFree(d_blockEdges);
+        cuMemFree(d_blockClasses);
+        cuMemFree(d_attrRemoveFlags);
+        cuMemFree(d_dataset);
+        cuMemFree(d_classBorder);
+
+        // Record the end time in nanoseconds
+        long endTime = System.nanoTime();
+
+        // Calculate the elapsed time in milliseconds
+        long duration = (endTime - startTime) / 1_000_000;  // Convert from nanoseconds to milliseconds
+
+        // Print the execution time in milliseconds
+        System.out.println("REMOVE USELESS CUDA: " + duration + " milliseconds");
 
         // Return pointer to array of HB.num, and which attributes can be removed.
         // [7, 1, 1, 1, 0, 0], indicates for block 7, we can remove x0, x1, x2,
@@ -592,7 +728,6 @@ public class HyperBlockGeneration
             }
             // add this length to the last index, to tell where to find the next block
             blockEdges.add(blockLength + blockEdges.get(blockEdges.size() - 1) + DV.fieldLength);
-
         }
 
         Double[] flatMinsArray = new Double[flatMinsList.size()];
@@ -607,6 +742,81 @@ public class HyperBlockGeneration
         return new Double[][] {flatMinsArray, flatMaxesArray, blockEdgesArray, blockClasses};
     }
 
+    private Double[][] minsMaxFlatCUDANEW() {
+        int size = hyper_blocks.size();
+        ArrayList<Double> flatMinsList = new ArrayList<>();
+        ArrayList<Double> flatMaxesList = new ArrayList<>();
+        Double[] blockEdges = new Double[size + 1];
+        Double[] blockClasses = new Double[size];
+        Double[] intervalCounts = new Double[size * DV.fieldLength];
+
+        // First block starts at 0.
+        blockEdges[0] = 0.0;
+        int idx = 0;
+
+        // go through and add all blocks mins and maxes list. along with adding in an int to tell how many numbers there are for that particular attribute
+        for(int hb = 0; hb < size; hb++) {
+            HyperBlock block = hyper_blocks.get(hb);
+            blockClasses[hb] = (double) block.classNum;
+
+            // Go through each attribute of mins
+            for (int m = 0; m < block.minimums.size(); m++) {
+
+                // Number of possible MIN/MAX ors for the attribute
+                double numIntervals = block.minimums.get(m).size();
+
+                // Add to block total size
+                //0 block 2 attribute
+                intervalCounts[idx] = numIntervals;
+                idx++;
+
+                // Add all interval for current attribute.
+                flatMinsList.addAll(block.minimums.get(m));
+                flatMaxesList.addAll(block.maximums.get(m));
+            }
+            // add this length to the last index, to tell where to find the next block
+            blockEdges[hb+1] = blockEdges[hb];
+        }
+
+        Double[] flatMinsArray = new Double[flatMinsList.size()];
+        Double[] flatMaxesArray = new Double[flatMaxesList.size()];
+
+        flatMinsList.toArray(flatMinsArray);
+        flatMaxesList.toArray(flatMaxesArray);
+
+        // Now return the arrays
+        return new Double[][] {flatMinsArray, flatMaxesArray, blockEdges, blockClasses, intervalCounts};
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     private Double[][] flattenDataset(){
         ArrayList<Double> dataset = new ArrayList<>();
         Double[] classBorder = new Double[DV.uniqueClasses.size() + 1];
@@ -614,19 +824,28 @@ public class HyperBlockGeneration
 
         // add each point to the dataset list attribute by attribute
         for(int classN = 0; classN < data.size(); classN++) {
-            classBorder[classN] = (double) data.get(classN).data.length;
+            // Exclusive end of class should be previous clas
+            classBorder[classN + 1] = (double) data.get(classN).data.length + classBorder[classN];
             for(double[] point : data.get(classN).data)
                 for(double attribute : point)
                     dataset.add(attribute);
         }
-        Double[] datasetArray = new Double[dataset.size()];
 
-        // IMPLEMENT ME
+        Double[] datasetArray = new Double[dataset.size()];
+        dataset.toArray(datasetArray);
+
         return new Double[][]{datasetArray, classBorder};
     }
 
+        // removed represents one particular attribute which we want to try and remove
+                // Go through each point in the other classes
+                    // go through each attribute of the block
+                        // go through each interval of the block
+
+
     public void removeUselessAttributes()
     {
+        long startTime = System.nanoTime();
 
         // Go through all hyperblocks
         for(int i = 0; i < hyper_blocks.size(); i++){
@@ -683,6 +902,15 @@ public class HyperBlockGeneration
             tempBlock.minimums = mins;
             tempBlock.maximums = maxes;
         }
+
+        // Record the end time in nanoseconds
+        long endTime = System.nanoTime();
+
+        // Calculate the elapsed time in milliseconds
+        long duration = (endTime - startTime) / 1_000_000;  // Convert from nanoseconds to milliseconds
+
+        // Print the execution time in milliseconds
+        System.out.println("REMOVE USELESS REGULAR: " + duration + " milliseconds");
     }
 
     /**
@@ -3500,6 +3728,7 @@ public class HyperBlockGeneration
                 break;
             }
         }
+
         // Should return true if the point is inside at least 1 interval for all attributes.
         return inside;
     }

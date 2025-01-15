@@ -743,11 +743,6 @@ public class HyperBlockStatistics {
             return Integer.compare(val1, val2); // Sort in ascending order
         });
 
-        // Print for debugging purposes
-        for(ArrayList<Integer> list: hbList){
-            System.out.println(list);
-        }
-
         return hbList;
     }
 }
