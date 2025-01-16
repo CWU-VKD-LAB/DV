@@ -121,7 +121,6 @@ public class HyperBlockGeneration
             hb.originalPosition = i;
         }
 
-        //removeUselessAttributesCUDA();
         blockStats = new HyperBlockStatistics(this);
         // k-fold used to be here
         //test_HBs();
@@ -532,8 +531,6 @@ public class HyperBlockGeneration
         // double[] dataset
         // int[] classBorder: The borders of the points in the classes ex: [0, 20, 100] class 1 from 0-19, class 2 20-99
 
-        long startTime = System.nanoTime();
-
         // Initialize JCuda
         JCudaDriver.setExceptionsEnabled(true);
         cuInit(0);
@@ -550,12 +547,8 @@ public class HyperBlockGeneration
         CUfunction removeUselessHelper = new CUfunction();
         cuModuleGetFunction(removeUselessHelper, module1, "removeUselessHelper");
 
-
-
-        //flattenMinMaxes: return new Double[][] {flatMinsArray, flatMaxesArray, blockEdgesArray, blockClasses, };
-        //Double[][]{datasetArray, classBorder};
-        //CudaUtil.allocateAndCopy();
-        Double[][] fMinMaxResult = minsMaxFlatCUDANEW();
+        Double[][] fMinMaxResult = flatMinMaxNoEncode();
+        //Double[][] fMinMaxResult = flattenMinsMaxesForCUDA();
         Double[][] fDataResult = flattenDataset();
 
 
@@ -584,6 +577,7 @@ public class HyperBlockGeneration
         }
 
         int[] intervalCounts = new int[fMinMaxResult[4].length];
+
         for(int i = 0; i < fMinMaxResult[4].length; i++){
             intervalCounts[i] = fMinMaxResult[4][i].intValue();
         }
@@ -611,7 +605,6 @@ public class HyperBlockGeneration
         CUdeviceptr d_dataset = CudaUtil.allocateAndCopy(dataset, Sizeof.DOUBLE);
         CUdeviceptr d_classBorder = CudaUtil.allocateAndCopy(classBorder, Sizeof.INT);
         CUdeviceptr d_intervalCounts = CudaUtil.allocateAndCopy(intervalCounts, Sizeof.INT);
-
 
         //mins, maxes, minMaxLen, blockEdges, numBlocks, int* blockClasses, char* attrRemoveFlags, int fieldLen, double* dataset, int numPoints, int* classBorder, int numClasses){
         Pointer kernelParameters = Pointer.to(
@@ -646,7 +639,7 @@ public class HyperBlockGeneration
         //System.out.println("Grid Size:" + gridSize);
         //System.out.println("Block Size:" + blockSize);
         int bytesForBlockFlags = hyper_blocks.size() * DV.fieldLength * Sizeof.BYTE;
-
+        long startTime = System.nanoTime();
         // Launch the kernel
         cuLaunchKernel(removeUselessHelper,
                 gridSize, 1, 1,     // Grid size (in blocks)
@@ -678,7 +671,23 @@ public class HyperBlockGeneration
 
         // Print the execution time in milliseconds
         System.out.println("REMOVE USELESS CUDA: " + duration + " milliseconds");
+        //System.out.println(Arrays.toString(attrRemoveFlags));
 
+
+        // Copy back over.
+        for(int hb = 0; hb < hyper_blocks.size(); hb++){
+            HyperBlock block = hyper_blocks.get(hb);
+            for(int attr = 0; attr < DV.fieldLength; attr++){
+                int index = hb * DV.fieldLength + attr;
+
+                if(attrRemoveFlags[index] == 1){
+                    block.minimums.get(attr).clear();
+                    block.maximums.get(attr).clear();
+                    block.minimums.get(attr).add(0.0);
+                    block.maximums.get(attr).add(1.0);
+                }
+            }
+        }
         // Return pointer to array of HB.num, and which attributes can be removed.
         // [7, 1, 1, 1, 0, 0], indicates for block 7, we can remove x0, x1, x2,
     }
@@ -742,7 +751,7 @@ public class HyperBlockGeneration
         return new Double[][] {flatMinsArray, flatMaxesArray, blockEdgesArray, blockClasses};
     }
 
-    private Double[][] minsMaxFlatCUDANEW() {
+    private Double[][] flatMinMaxNoEncode() {
         int size = hyper_blocks.size();
         ArrayList<Double> flatMinsList = new ArrayList<>();
         ArrayList<Double> flatMaxesList = new ArrayList<>();
@@ -758,13 +767,13 @@ public class HyperBlockGeneration
         for(int hb = 0; hb < size; hb++) {
             HyperBlock block = hyper_blocks.get(hb);
             blockClasses[hb] = (double) block.classNum;
-
+            int length = 0;
             // Go through each attribute of mins
             for (int m = 0; m < block.minimums.size(); m++) {
 
                 // Number of possible MIN/MAX ors for the attribute
                 double numIntervals = block.minimums.get(m).size();
-
+                length += numIntervals;
                 // Add to block total size
                 //0 block 2 attribute
                 intervalCounts[idx] = numIntervals;
@@ -775,7 +784,7 @@ public class HyperBlockGeneration
                 flatMaxesList.addAll(block.maximums.get(m));
             }
             // add this length to the last index, to tell where to find the next block
-            blockEdges[hb+1] = blockEdges[hb];
+            blockEdges[hb+1] = blockEdges[hb] + length;
         }
 
         Double[] flatMinsArray = new Double[flatMinsList.size()];
@@ -2188,6 +2197,7 @@ public class HyperBlockGeneration
 
         simplifications = new JComboBox<>(new String[] {
                 "Remove Useless Attributes",
+                "CUDA RUA",
                 "Create Disjunctive Blocks",
                 "Remove Useless Blocks",
                 "Expansion Algorithm" //Currently disabled until made interactive and ran by Dr. K
@@ -2195,6 +2205,7 @@ public class HyperBlockGeneration
         simplifications.addActionListener(e ->{
             String selected = (String) simplifications.getSelectedItem();
             if (selected.equals("Remove Useless Attributes")) removeUselessAttributes();
+            else if (selected.equals("CUDA RUA")) removeUselessAttributesCUDA();
             else if (selected.equals("Create Disjunctive Blocks")) simplifyHBtoDisjunctiveForm();
             else if (selected.equals("Remove Useless Blocks")) removeUselessBlocks();
             else if (selected.equals("Expansion Algorithm")){
