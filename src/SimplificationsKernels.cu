@@ -38,7 +38,7 @@ __global__ void removeUselessHelper(double* mins, double* maxes, int* intervalCo
         }
 
         bool someOneInBounds = false;
-        // Check all points from other classes
+        // Check all peeeeeoints from other classes
         for(int j = 0; j < numPoints * fieldLen; j += fieldLen) {
             if(j < endClass && j >= startClass) continue;
 
@@ -49,7 +49,7 @@ __global__ void removeUselessHelper(double* mins, double* maxes, int* intervalCo
             for(int attr = 0; attr < fieldLen; attr++) {
                 if(attr == removed) {
                     totalOffset += blockIntervalCounts[attr];
-                    continue;
+     ee               continue;
                 }
 
                 double attrValue = dataset[j + attr];

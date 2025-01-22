@@ -83,6 +83,8 @@ public class HyperBlockGeneration
     // colors
     Color[] graphColors;
 
+    JButton changeSplitBtn;
+    JPopupMenu trainSplitPanel;
     boolean remove_extra = false;
 
     record Interval(double start, double end) {}
@@ -99,9 +101,11 @@ public class HyperBlockGeneration
 
         // generate hyperblocks, and print hyperblock info
         getData();
-        generateHBs(true);
+        generateHBs(false);
+
         HB_analytics();
 
+        System.out.println(DV.trainData.get(1).data.length);
         // visualize hyperblocks
         if (!hyper_blocks.isEmpty())
         {
@@ -639,7 +643,9 @@ public class HyperBlockGeneration
         //System.out.println("Grid Size:" + gridSize);
         //System.out.println("Block Size:" + blockSize);
         int bytesForBlockFlags = hyper_blocks.size() * DV.fieldLength * Sizeof.BYTE;
+
         long startTime = System.nanoTime();
+
         // Launch the kernel
         cuLaunchKernel(removeUselessHelper,
                 gridSize, 1, 1,     // Grid size (in blocks)
@@ -649,6 +655,7 @@ public class HyperBlockGeneration
         );
 
         cuCtxSynchronize();
+        long endTime = System.nanoTime();
 
 
         // Copy the changed flags back from the device.
@@ -664,7 +671,6 @@ public class HyperBlockGeneration
         cuMemFree(d_classBorder);
 
         // Record the end time in nanoseconds
-        long endTime = System.nanoTime();
 
         // Calculate the elapsed time in milliseconds
         long duration = (endTime - startTime) / 1_000_000;  // Convert from nanoseconds to milliseconds
@@ -2031,6 +2037,7 @@ public class HyperBlockGeneration
         mainFrame.add(expansionScroll, BorderLayout.EAST);
         mainFrame.setMinimumSize(new Dimension(DV.minSize[0], DV.minSize[1]));
 
+
         // show
         mainFrame.setVisible(true);
         mainFrame.revalidate();
@@ -2195,6 +2202,10 @@ public class HyperBlockGeneration
         toolBar.add(simplificationsL);
         toolBar.addSeparator();
 
+        changeSplitBtn = new JButton("Data Split");
+        changeSplitBtn.addActionListener(e ->
+                trainSplitPanel.setVisible(true));
+        toolBar.add(changeSplitBtn);
         simplifications = new JComboBox<>(new String[] {
                 "Remove Useless Attributes",
                 "CUDA RUA",

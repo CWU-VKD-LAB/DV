@@ -1,5 +1,9 @@
+import javax.swing.*;
+import java.awt.*;
+import java.awt.image.BufferedImage;
 import java.lang.reflect.Array;
 import java.util.*;
+import java.util.List;
 import java.util.stream.Collectors;
 
 
@@ -15,9 +19,23 @@ import java.util.stream.Collectors;
  * 3. ...
  */
 public class HyperBlockStatistics {
+
+    private JPanel simpPanel;
+    private JPanel clausePanel;
+    private JPanel attrPanel;
+    private JPanel blockPanel;
+    private JFrame mainFrame;
+
+    private int firstSetIdx;
+    private int secondSetIdx;
+    private boolean showPercent = true;
+
     private ArrayList<HyperBlock> hyper_blocks;
     private ArrayList<DataObject> data;
     private HyperBlockGeneration hbGen;
+
+    private final JLabel[] beforeLabels = new JLabel[4 + DV.uniqueClasses.size()];
+
 
     /**
      * Record for statistics. Could be good idea to break up, but not doing that yet.
@@ -47,7 +65,8 @@ public class HyperBlockStatistics {
 
     private ArrayList<statisticSet> statisticHistory;
 
-    boolean debug = true;
+    boolean debug = false;
+    boolean console = false;
 
     public HyperBlockStatistics(HyperBlockGeneration hbGen){
         this.hbGen = hbGen;
@@ -95,6 +114,432 @@ public class HyperBlockStatistics {
 
     //TODO: IMPLEMENT A GUI WINDOW THAT WILL BE BUILT FOR WHEN THE USER FINALLY CLICKS TO SEE THE STATISTICS.
     public void statisticsGUI(){
+        mainFrame  = new JFrame();
+        mainFrame.setDefaultCloseOperation(JFrame.HIDE_ON_CLOSE);
+        mainFrame.setLayout(new BorderLayout());
+
+
+        // Dataset info footer.
+        int len = 0;
+        for(int i = 0; i < data.size();i++){
+            len += data.get(i).data.length;
+        }
+        String label = "Dataset: " + DV.dataFileName + "   Points: " + len + "   Dimensions: " + DV.fieldLength + "-D";
+        JLabel dataSetInfoLbl = new JLabel(label, SwingConstants.CENTER);
+        dataSetInfoLbl.setFont(new Font("Arial", Font.BOLD, 14));
+        dataSetInfoLbl.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        mainFrame.add(dataSetInfoLbl, BorderLayout.SOUTH);
+
+
+        mainFrame.add(createToolBar(), BorderLayout.NORTH);
+
+
+
+        //Make all the panels
+        simpPanel = createSimplificationPanel();
+        attrPanel = createAttrPanel();
+        clausePanel = createClausePanel();
+        blockPanel = createBlockPanel();
+
+        simpPanel.setPreferredSize(new Dimension(800, 400));
+        mainFrame.add(simpPanel, BorderLayout.CENTER);
+
+
+        // Show the frame
+        //mainFrame.setSize(400, 200);
+        mainFrame.setVisible(true);
+        mainFrame.revalidate();
+        mainFrame.pack();
+        mainFrame.repaint();
+    }
+
+    // Method to create statistic panels (Before/After)
+    private JPanel createStatisticPanel(String header, statisticSet stats) {
+        JPanel panel = new JPanel();
+        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+
+        JLabel headerLabel = new JLabel(header);
+        JLabel totalBlocks = new JLabel(String.valueOf(stats.numBlocks));
+        JLabel smallBlocks = new JLabel(String.valueOf(stats.numSmallHBs));
+        JLabel avgPointsPerBlock = new JLabel(String.valueOf(stats.averageHBSize));
+
+        panel.add(headerLabel);
+        addWhiteSpace(panel);
+        panel.add(totalBlocks);
+        panel.add(smallBlocks);
+        addWhiteSpace(panel);
+        panel.add(avgPointsPerBlock);
+
+        for (double avg : stats.averageSizeByClass) {
+            panel.add(new JLabel(String.valueOf(avg)));
+        }
+        return panel;
+    }
+
+    // Method to create the difference panel
+    private JPanel createDifferencePanel(statisticSet sBefore, statisticSet sAfter) {
+        JPanel panel = new JPanel();
+        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+
+        // Calculate the differences
+        double blockChange = ((double) sAfter.numBlocks / sBefore.numBlocks) * 100.0;
+        double smallBlockChange = ((double) sAfter.numSmallHBs / sBefore.numSmallHBs) * 100.0;
+        double averageBlockSizeChange = -((sAfter.averageHBSize / sBefore.averageHBSize) * 100.0);
+
+        if (showPercent) {
+            blockChange = 100 - blockChange;
+            smallBlockChange = 100 - smallBlockChange;
+            averageBlockSizeChange = -(100 - (-1 * averageBlockSizeChange));
+        }
+
+        // Format the numbers with percentage symbols when in percent mode
+        String blockChangeStr = String.format(showPercent ? "%.3f%%" : "%.3f", blockChange);
+        String smallBlockChangeStr = String.format(showPercent ? "%.3f%%" : "%.3f", smallBlockChange);
+        String avgBlockSizeChangeStr = String.format(showPercent ? "%.3f%%" : "%.3f", averageBlockSizeChange);
+
+        // Add components to the panel
+        JLabel diffHeader = new JLabel("Difference");
+        JLabel tb_Diff = new JLabel(blockChangeStr);
+        JLabel sb_Diff = new JLabel(smallBlockChangeStr);
+        JLabel avgPPB_Diff = new JLabel(avgBlockSizeChangeStr);
+
+        panel.add(diffHeader);
+        addWhiteSpace(panel);
+        panel.add(tb_Diff);
+        panel.add(sb_Diff);
+        addWhiteSpace(panel);
+        panel.add(avgPPB_Diff);
+
+        return panel;
+    }
+
+
+    private JPanel createBlockPanel() {
+        JPanel panel = new JPanel(new GridLayout(1, 4));
+        panel.setPreferredSize(new Dimension(1600, 900));
+
+        JPanel labelPanel = new JPanel();
+        labelPanel.setLayout(new BoxLayout(labelPanel, BoxLayout.Y_AXIS));
+        ArrayList<String> labels = new ArrayList<>(List.of("Total Blocks", "Small Blocks",
+                                                            "Avg. Points per Block", "Total"));
+        for(String uClass : DV.uniqueClasses){
+            labels.add("Class \"" + uClass + "\"");
+        }
+
+        // If a label is a header, mark it. //TODO: find a better way to do this later.
+        Set<Integer> headers = new HashSet<>(Set.of(2));
+
+        addWhiteSpace(labelPanel);
+        addWhiteSpace(labelPanel);
+        for (int i = 0; i < labels.size(); i++) {
+            JLabel tmp = new JLabel(labels.get(i));
+
+            // Check if the current index is a header
+            if (headers.contains(i)) {
+                tmp.setFont(tmp.getFont().deriveFont(Font.BOLD)); // Set font to bold
+            }
+
+            // Add the label to the panel
+            labelPanel.add(tmp);
+        }
+
+
+        statisticSet sBefore = statisticHistory.get(firstSetIdx);
+        statisticSet sAfter = statisticHistory.get(secondSetIdx);
+
+        JPanel beforePanel = createStatisticPanel("Before", sBefore);
+        JPanel afterPanel = createStatisticPanel("After", sAfter);
+
+
+        JPanel differencePanel = createDifferencePanel(sBefore, sAfter);
+        JButton toggleUnit = new JButton(showPercent ? "Show Raw Numbers" : "Show Percentages");
+        toggleUnit.addActionListener(e -> {
+            showPercent = !showPercent;
+
+            // Update difference panel
+            differencePanel.removeAll();
+            JPanel updatedDifferencePanel = createDifferencePanel(sBefore, sAfter);
+            for (Component comp : updatedDifferencePanel.getComponents()) {
+                differencePanel.add(comp);
+            }
+
+            // Update toggle button text
+            toggleUnit.setText(showPercent ? "Show Raw Numbers" : "Show Percentages");
+
+            // Revalidate and repaint the container
+            differencePanel.revalidate();
+            differencePanel.repaint();
+        });
+
+        // Add the difference panel and toggle button
+        panel.add(labelPanel);
+        panel.add(beforePanel);
+        panel.add(afterPanel);
+        panel.add(differencePanel);
+        panel.add(toggleUnit);
+
+        return panel;
+
+    }
+
+
+
+    private void addWhiteSpace(JPanel panel){
+        panel.add(Box.createRigidArea(new Dimension(0, 10)));
+    }
+
+    private JPanel createClausePanel() {
+        JPanel panel = new JPanel();
+        panel.setPreferredSize(new Dimension(1600, 900));
+        JLabel label = new JLabel("Clauses");
+        panel.add(label);
+
+        return panel;
+    }
+
+    private JPanel createAttrPanel() {
+        statisticSet sBefore = statisticHistory.get(firstSetIdx);
+        statisticSet sAfter = statisticHistory.get(secondSetIdx);
+
+        ArrayList<Integer> removed = new ArrayList<>(sBefore.usedAttributes);
+        removed.removeAll(sAfter.usedAttributes);
+        Set<Integer> removedSet = new HashSet<>(removed);
+        Set<Integer> beforeSet = new HashSet<>(sBefore.usedAttributes);
+        System.out.println(removed);
+
+        JPanel panel = new JPanel();
+        panel.setPreferredSize(new Dimension(1600, 900));
+        panel.setLayout(new BorderLayout()); // Use BorderLayout to center the grid
+
+        JLabel label = new JLabel("Attributes", SwingConstants.CENTER);
+        label.setFont(new Font("Arial", Font.BOLD, 16));
+        panel.add(label, BorderLayout.NORTH);
+
+
+        // Calculate grid dimensions based on DV.fieldLen
+        int totalAttributes = DV.fieldLength;
+        int cellSize = 50; // Size of each cell (adjust as needed)
+        int gridSize = (int) Math.ceil(Math.sqrt(totalAttributes)); // n x n grid size
+
+        // Create a BufferedImage for the grid
+        BufferedImage gridImage = createGridImage(gridSize, gridSize, cellSize, cellSize, totalAttributes, removedSet, beforeSet);
+
+        // Display the image in a JLabel
+        JLabel imageLabel = new JLabel(new ImageIcon(gridImage));
+        panel.add(imageLabel, BorderLayout.CENTER);
+
+        return panel;
+    }
+
+    // Method to create a grid as a BufferedImage
+    private BufferedImage createGridImage(int rows, int cols, int cellWidth, int cellHeight, int totalAttributes, Set<Integer> removedSet, Set<Integer> beforeSet) {
+        int imageWidth = cols * cellWidth;
+        int imageHeight = rows * cellHeight;
+
+
+        // Create a blank image
+        BufferedImage image = new BufferedImage(imageWidth, imageHeight, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g2d = image.createGraphics();
+
+        // Enable anti-aliasing for better rendering
+        g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+        int attributeNum = 0; // Attribute counter
+
+        // Draw the grid
+        for (int row = 0; row < rows; row++) {
+            for (int col = 0; col < cols; col++) {
+                int x = col * cellWidth;
+                int y = row * cellHeight;
+
+                // Determine color based on attribute state
+                if (attributeNum < totalAttributes) {
+                    if (removedSet.contains(attributeNum)) {
+                        g2d.setColor(Color.RED);
+                    }else if(beforeSet.contains(attributeNum)) {
+                        g2d.setColor(Color.GREEN);
+                    }
+                    else{
+                        g2d.setColor(Color.GRAY);
+                    }
+                } else {
+                    g2d.setColor(Color.BLACK);
+                }
+
+                // Fill the cell
+                g2d.fillRect(x, y, cellWidth, cellHeight);
+
+                // Draw the cell border
+                g2d.setColor(Color.BLACK);
+                g2d.drawRect(x, y, cellWidth, cellHeight);
+
+                // Draw the cell text for valid attributes
+                if (attributeNum < totalAttributes) {
+                    g2d.setColor(Color.BLACK);
+                    g2d.setFont(new Font("Arial", Font.BOLD, 12));
+                    String text = String.format("x%d",attributeNum);
+                    FontMetrics fm = g2d.getFontMetrics();
+
+                    int textX = x + (cellWidth - fm.stringWidth(text)) / 2;
+                    int textY = y + (cellHeight + fm.getAscent()) / 2 - 2;
+                    g2d.drawString(text, textX, textY);
+                }
+
+                attributeNum++;
+            }
+        }
+
+        g2d.dispose(); // Release graphics context
+        return image;
+    }
+
+
+    private JPanel createSimplificationPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setPreferredSize(new Dimension(1600, 900));
+        JLabel label = new JLabel("Simplifications");
+        panel.add(label);
+
+        // Add the list of simplifications
+        JScrollPane simpScroll = new JScrollPane();
+        panel.add(simpScroll, BorderLayout.LINE_START);
+
+
+        int last = statisticHistory.size() - 1;
+        JPanel simpList = new JPanel();
+        simpList.setLayout(new BoxLayout(simpList, BoxLayout.Y_AXIS));
+
+
+        JLabel temp = new JLabel(" 0. None");
+        temp.setFont(new Font("Tahoma", Font.PLAIN, 14));
+        temp.setBorder(BorderFactory.createEmptyBorder(5, 0, 5, 0));
+        simpList.add(temp);
+        simpList.add(Box.createVerticalStrut(10));
+
+        for(int i = 0; i < statisticHistory.get(last).algoLog.size(); i++){
+
+            String simp = statisticHistory.get(last).algoLog.get(i);
+            JLabel elementLabel = new JLabel(" " + (i+1) + ". " + simp + "  ");
+            elementLabel.setFont(new Font("Tahoma", Font.PLAIN, 14));
+            elementLabel.setBorder(BorderFactory.createEmptyBorder(5, 0, 5, 0));
+
+            simpList.add(elementLabel);
+            simpList.add(Box.createVerticalStrut(10));
+        }
+
+        simpList.setBackground(new Color(219, 218, 215));
+        simpList.setBorder(BorderFactory.createLineBorder(new Color(219, 218, 215), 1));
+
+        simpScroll.setViewportView(simpList);
+
+        // Add the comparison picker portion
+        JPanel comparePicker = new JPanel();
+        panel.add(comparePicker, BorderLayout.CENTER);
+
+
+        // Allow user to select the indices of the sets they want to compare
+        // first and second spinner should be limited to 0 + range
+        JLabel compareLbl = new JLabel("");
+        JSpinner firstSpinner = new JSpinner();
+        JTextField firstSetTxtFld = new JTextField("None");
+
+
+        JLabel toLbl = new JLabel("To");
+        JSpinner secondSpinner = new JSpinner();
+        JTextField secondSetTxtFld = new JTextField("");
+
+        SpinnerNumberModel firstSpinnerModel = new SpinnerNumberModel(0, 0, statisticHistory.size() - 1, 1);
+        firstSpinner.setModel(firstSpinnerModel);
+
+        SpinnerNumberModel secondSpinnerModel = new SpinnerNumberModel(statisticHistory.size() - 1, 0, statisticHistory.size() - 1, 1);
+        secondSpinner.setModel(secondSpinnerModel);
+
+        JButton generateComparison = new JButton("Generate Comparison");
+        generateComparison.addActionListener(e->{
+            int firstSetIdx = (Integer) firstSpinner.getValue();
+            int secondSetIdx = (Integer) secondSpinner.getValue();
+
+            if (firstSetIdx == secondSetIdx || secondSetIdx < firstSetIdx) {
+                JOptionPane.showMessageDialog(null, "Please select different indices for comparison.");
+                return;
+            }
+
+            // Compare the stat set at elements
+            genGUIComparison();
+
+        });
+
+
+        comparePicker.add(compareLbl);
+        comparePicker.add(firstSpinner);
+        comparePicker.add(firstSetTxtFld);
+        comparePicker.add(toLbl);
+        comparePicker.add(secondSpinner);
+        comparePicker.add(secondSetTxtFld);
+        comparePicker.add(generateComparison);
+        return panel;
+    }
+
+    private void genGUIComparison(){
+       attrPanel = createAttrPanel();
+       blockPanel = createBlockPanel();
+       clausePanel = createClausePanel();
+    }
+
+
+    private JToolBar createToolBar(){
+        JToolBar toolBar = new JToolBar();
+        toolBar.setFloatable(false);
+        toolBar.setLayout(new FlowLayout(FlowLayout.LEFT));
+
+        JButton simpTabBtn = new JButton("Simplifications Done");
+        simpTabBtn.setPreferredSize(new Dimension(200, 25));
+        simpTabBtn.addActionListener(e ->{
+            mainFrame.getContentPane().remove(mainFrame.getContentPane().getComponent(2));
+            mainFrame.add(simpPanel, BorderLayout.CENTER);
+            mainFrame.revalidate();
+            mainFrame.repaint();
+        });
+
+        JButton clauseTabBtn= new JButton("Clauses");
+        clauseTabBtn.setPreferredSize(new Dimension(200, 25));
+        clauseTabBtn.addActionListener(e ->{
+            // Show the clauses tab
+            mainFrame.getContentPane().remove(mainFrame.getContentPane().getComponent(2));
+            mainFrame.add(clausePanel, BorderLayout.CENTER);
+            mainFrame.revalidate();
+            mainFrame.repaint();
+
+        });
+
+        JButton blocksBtn = new JButton("Blocks");
+        blocksBtn.setPreferredSize(new Dimension(200, 25));
+        blocksBtn.addActionListener(e ->{
+            // Show the blocks tab
+            mainFrame.getContentPane().remove(mainFrame.getContentPane().getComponent(2));
+            mainFrame.add(blockPanel, BorderLayout.CENTER);
+            mainFrame.revalidate();
+            mainFrame.repaint();
+
+        });
+
+        JButton attrBtn = new JButton("Attributes");
+        attrBtn.setPreferredSize(new Dimension(200, 25));
+        attrBtn.addActionListener(e ->{
+            // Show the attributes tab
+            mainFrame.getContentPane().remove(mainFrame.getContentPane().getComponent(2));
+            mainFrame.add(attrPanel, BorderLayout.CENTER);
+            mainFrame.revalidate();
+            mainFrame.repaint();
+        });
+
+
+        toolBar.add(simpTabBtn);
+        toolBar.add(clauseTabBtn);
+        toolBar.add(blocksBtn);
+        toolBar.add(attrBtn);
+
+        return toolBar;
     }
 
     /**
@@ -110,189 +555,193 @@ public class HyperBlockStatistics {
         for(int i = 0; i < statisticHistory.size(); i++){
             System.out.println(i + " : " + statisticHistory.get(i).algoLog);
         }
-        if (debug) {
+        if (console) {
             Scanner scan = new Scanner(System.in);
             System.out.println("Before: ");
             before = scan.nextInt();
             System.out.println("After: ");
             after = scan.nextInt();
-        }
-
-        // Set for the before info and set for the after info
-        statisticSet sBefore = statisticHistory.get(before);
-        statisticSet sAfter = statisticHistory.get(after);
-
-        System.out.println("=== DATASET INFO ===");
-        System.out.printf("\t%s\n", DV.dataFileName);
-        System.out.printf("\t%s-D\n", DV.fieldLength);
-        System.out.printf("\t%s points\n\n", sBefore.totalDataPoints);
 
 
-        // Difference in the simplifications ran from setB to setA.
-        System.out.println("=== SIMPLIFICATIONS FROM BEFORE TO AFTER ===");
-        for (int i = sBefore.algoLog.size(); i < sAfter.algoLog.size(); i++) {
-            System.out.println("\t" + (i + 1) + ". " + sAfter.algoLog.get(i));
-        }
-        // ex before "Remove Useless" after "Create Disjunctive"
+            // Set for the before info and set for the after info
+            statisticSet sBefore = statisticHistory.get(before);
+            statisticSet sAfter = statisticHistory.get(after);
 
-        // % reduction in blocks. 10 -> 8
-        double blockChange = 100 - ((double) sAfter.numBlocks / sBefore.numBlocks) * 100.0;
-        double smallBlockChange = 100 - ((double) sAfter.numSmallHBs / sBefore.numSmallHBs) * 100.0;
-        double averageBlockSizeChange = -(100 - ((double) sAfter.averageHBSize / sBefore.averageHBSize) * 100.0);
-
-        System.out.println("\n=== BLOCKS ===");
-        System.out.printf("\t%-25s %d ---> %d\n", "Total number blocks :", sBefore.numBlocks, sAfter.numBlocks);
-        System.out.printf("\t%.2f%% fewer blocks.\n\n", blockChange);
-        System.out.println("Coverage: " + sAfter.coverage);
-        System.out.println("=== BLOCKS BY CLASS ===");
-
-        // Print these numbers by class
-        for (int i = 0; i < DV.classNumber; i++) {
-            System.out.printf("\t%-25s Class: \"%s\" %d ---> %d\n", "Total number blocks - ", DV.uniqueClasses.get(i), sBefore.numBlocksPerClass[i], sAfter.numBlocksPerClass[i]);
-            double temp = 100 - ((double) sAfter.numBlocksPerClass[i] / sBefore.numBlocksPerClass[i]) * 100.0;
-            System.out.printf("\t%.2f%% fewer blocks.\n\n", temp);
-        }
-
-        // Number of small blocks:
-        System.out.printf("\t%-25s %d ---> %d\n", "Number small blocks :", sBefore.numSmallHBs, sAfter.numSmallHBs);
-        System.out.printf("\t%.2f%% fewer small blocks.\n\n", smallBlockChange);
-
-        // AVERAGE BLOCK SIZES, AND BY CLASS SIZES
-        System.out.printf("\t%-25s %.2f ---> %.2f\n", "Avg. points/block :", sBefore.averageHBSize, sAfter.averageHBSize);
-        System.out.printf("\t%.2f%% more avg. points/block\n\n", averageBlockSizeChange);
-
-        for (int i = 0; i < DV.classNumber; i++) {
-            System.out.printf("\tClass \"%s\" : %f ---> %f avg. points/block.\n", DV.uniqueClasses.get(i), sBefore.averageSizeByClass[i], sAfter.averageSizeByClass[i]);
-        }
-
-        System.out.println("\n=== CLAUSES ===");
-        // % reduction in clauses.
-        double clauseChange = 100 - ((double) sAfter.totalClauses / sBefore.totalClauses) * 100.0;
-        System.out.printf("\t%d clauses ---> %d clauses.\n", sBefore.totalClauses, sAfter.totalClauses);
-
-        System.out.printf("\t%.2f%% fewer clauses total.\n\n", clauseChange);
-
-        // % reduction in clauses per class
-        double[] classClauseChanges = new double[sAfter.classClauseCounts.length];
-        for (int i = 0; i < sAfter.classClauseCounts.length; i++) {
-            classClauseChanges[i] = 100 - ((double) sAfter.classClauseCounts[i] / sBefore.classClauseCounts[i]) * 100.0;
-            System.out.printf("\tClass \"%s\" number of clauses:   %d before ---> %d after.", DV.uniqueClasses.get(i), sBefore.classClauseCounts[i], sAfter.classClauseCounts[i]);
-            System.out.printf("\tClass \"%s\": %.2f%% fewer clauses.\n", DV.uniqueClasses.get(i), classClauseChanges[i]);
-        }
-
-        double attributeChange = 100 - ((double) sAfter.usedAttributes.size() / sBefore.usedAttributes.size()) * 100.0;
-        System.out.println("\n=== Attributes ===");
-        System.out.printf("\t%d ---> %d attributes used.  (-%.2f%%)\n", sBefore.usedAttributes.size(), sAfter.usedAttributes.size(), attributeChange);
-
-        System.out.print("\tAttributes used before: ");
-        List<Integer> attributes = sBefore.usedAttributes;
-        printIntervalCondensed(attributes);
+            System.out.println("=== DATASET INFO ===");
+            System.out.printf("\t%s\n", DV.dataFileName);
+            System.out.printf("\t%s-D\n", DV.fieldLength);
+            System.out.printf("\t%s points\n\n", sBefore.totalDataPoints);
 
 
-        System.out.print("\n\tAttributes used after: ");
-        attributes = sAfter.usedAttributes;
-        printIntervalCondensed(attributes);
+            // Difference in the simplifications ran from setB to setA.
+            System.out.println("=== SIMPLIFICATIONS FROM BEFORE TO AFTER ===");
+            for (int i = sBefore.algoLog.size(); i < sAfter.algoLog.size(); i++) {
+                System.out.println("\t" + (i + 1) + ". " + sAfter.algoLog.get(i));
+            }
+            // ex before "Remove Useless" after "Create Disjunctive"
+
+            // % reduction in blocks. 10 -> 8
+            double blockChange = 100 - ((double) sAfter.numBlocks / sBefore.numBlocks) * 100.0;
+            double smallBlockChange = 100 - ((double) sAfter.numSmallHBs / sBefore.numSmallHBs) * 100.0;
+            double averageBlockSizeChange = -(100 - ((double) sAfter.averageHBSize / sBefore.averageHBSize) * 100.0);
+
+            System.out.println("\n=== BLOCKS ===");
+            System.out.printf("\t%-25s %d ---> %d\n", "Total number blocks :", sBefore.numBlocks, sAfter.numBlocks);
+            System.out.printf("\t%.2f%% fewer blocks.\n\n", blockChange);
+            System.out.println("Coverage: " + sAfter.coverage);
+            System.out.println("=== BLOCKS BY CLASS ===");
+
+            // Print these numbers by class
+            for (int i = 0; i < DV.classNumber; i++) {
+                System.out.printf("\t%-25s Class: \"%s\" %d ---> %d\n", "Total number blocks - ", DV.uniqueClasses.get(i), sBefore.numBlocksPerClass[i], sAfter.numBlocksPerClass[i]);
+                double temp = 100 - ((double) sAfter.numBlocksPerClass[i] / sBefore.numBlocksPerClass[i]) * 100.0;
+                System.out.printf("\t%.2f%% fewer blocks.\n\n", temp);
+            }
+
+            // Number of small blocks:
+            System.out.printf("\t%-25s %d ---> %d\n", "Number small blocks :", sBefore.numSmallHBs, sAfter.numSmallHBs);
+            System.out.printf("\t%.2f%% fewer small blocks.\n\n", smallBlockChange);
+
+            // AVERAGE BLOCK SIZES, AND BY CLASS SIZES
+            System.out.printf("\t%-25s %.2f ---> %.2f\n", "Avg. points/block :", sBefore.averageHBSize, sAfter.averageHBSize);
+            System.out.printf("\t%.2f%% more avg. points/block\n\n", averageBlockSizeChange);
+
+            for (int i = 0; i < DV.classNumber; i++) {
+                System.out.printf("\tClass \"%s\" : %f ---> %f avg. points/block.\n", DV.uniqueClasses.get(i), sBefore.averageSizeByClass[i], sAfter.averageSizeByClass[i]);
+            }
+
+            System.out.println("\n=== CLAUSES ===");
+            // % reduction in clauses.
+            double clauseChange = 100 - ((double) sAfter.totalClauses / sBefore.totalClauses) * 100.0;
+            System.out.printf("\t%d clauses ---> %d clauses.\n", sBefore.totalClauses, sAfter.totalClauses);
+
+            System.out.printf("\t%.2f%% fewer clauses total.\n\n", clauseChange);
+
+            // % reduction in clauses per class
+            double[] classClauseChanges = new double[sAfter.classClauseCounts.length];
+            for (int i = 0; i < sAfter.classClauseCounts.length; i++) {
+                classClauseChanges[i] = 100 - ((double) sAfter.classClauseCounts[i] / sBefore.classClauseCounts[i]) * 100.0;
+                System.out.printf("\tClass \"%s\" number of clauses:   %d before ---> %d after.", DV.uniqueClasses.get(i), sBefore.classClauseCounts[i], sAfter.classClauseCounts[i]);
+                System.out.printf("\tClass \"%s\": %.2f%% fewer clauses.\n", DV.uniqueClasses.get(i), classClauseChanges[i]);
+            }
+
+            double attributeChange = 100 - ((double) sAfter.usedAttributes.size() / sBefore.usedAttributes.size()) * 100.0;
+            System.out.println("\n=== Attributes ===");
+            System.out.printf("\t%d ---> %d attributes used.  (-%.2f%%)\n", sBefore.usedAttributes.size(), sAfter.usedAttributes.size(), attributeChange);
+
+            System.out.print("\tAttributes used before: ");
+            List<Integer> attributes = sBefore.usedAttributes;
+            printIntervalCondensed(attributes);
 
 
-        System.out.print("\n\tThe attributes removed from before to after were: ");
-        ArrayList<Integer> removed = new ArrayList<>(sBefore.usedAttributes);
-        removed.removeAll(sAfter.usedAttributes);
-        if (removed.isEmpty()) {
-            System.out.print("NONE. \n");
-        }else{
-            printIntervalCondensed(removed);
-        }
+            System.out.print("\n\tAttributes used after: ");
+            attributes = sAfter.usedAttributes;
+            printIntervalCondensed(attributes);
 
 
-        System.out.print("\n=== ATTRIBUTES BY CLASS ===");
+            System.out.print("\n\tThe attributes removed from before to after were: ");
+            ArrayList<Integer> removed = new ArrayList<>(sBefore.usedAttributes);
+            removed.removeAll(sAfter.usedAttributes);
+            if (removed.isEmpty()) {
+                System.out.print("NONE. \n");
+            } else {
+                printIntervalCondensed(removed);
+            }
 
-        for (int i = 0; i < DV.classNumber; i++) {
-            // Print "Before" line
-            System.out.printf("\n\t%-6s : %-14s", "Before - Class ", DV.uniqueClasses.get(i));
-            printIntervalCondensed(sBefore.usedAttributesByClass.get(i));
 
-            // Print "After" line
-            System.out.printf("\n\t%-7s : %-15s", "After - Class ", DV.uniqueClasses.get(i));
-            printIntervalCondensed(sAfter.usedAttributesByClass.get(i));
+            System.out.print("\n=== ATTRIBUTES BY CLASS ===");
 
-        }
+            for (int i = 0; i < DV.classNumber; i++) {
+                // Print "Before" line
+                System.out.printf("\n\t%-6s : %-14s", "Before - Class ", DV.uniqueClasses.get(i));
+                printIntervalCondensed(sBefore.usedAttributesByClass.get(i));
 
-        System.out.println("\n=== ATTRIBUTES BY BLOCK ===");
+                // Print "After" line
+                System.out.printf("\n\t%-7s : %-15s", "After - Class ", DV.uniqueClasses.get(i));
+                printIntervalCondensed(sAfter.usedAttributesByClass.get(i));
 
-        System.out.print("\t= BEFORE BLOCKS = ");
-        for (int i = 0; i < sBefore.usedAttributesPerBlock.size(); i++) {
-            int n = sBefore.usedAttributesPerBlock.get(i).size() - 1;
-            int last = sBefore.usedAttributesPerBlock.get(i).get(n);
-            System.out.printf("\n\tBlock #%d from class \"%s\" :", sBefore.usedAttributesPerBlock.get(i).get(n-1), DV.uniqueClasses.get(last));
+            }
 
-            // Condensed print all but last 2 elements of each block row.
-            printIntervalCondensed(sBefore.usedAttributesPerBlock.get(i).subList(0, n-1));
-        }
+            System.out.println("\n=== ATTRIBUTES BY BLOCK ===");
 
-        System.out.print("\n\n\t= AFTER BLOCKS = ");
-        int size = sBefore.usedAttributesPerBlock.size();
+            System.out.print("\t= BEFORE BLOCKS = ");
+            for (int i = 0; i < sBefore.usedAttributesPerBlock.size(); i++) {
+                int n = sBefore.usedAttributesPerBlock.get(i).size() - 1;
+                int last = sBefore.usedAttributesPerBlock.get(i).get(n);
+                System.out.printf("\n\tBlock #%d from class \"%s\" :", sBefore.usedAttributesPerBlock.get(i).get(n - 1), DV.uniqueClasses.get(last));
 
-        // Create set of unique IDs present in sAfter for quick lookup
-        Set<Integer> afterBlockIds = sAfter.usedAttributesPerBlock.stream()
-                .map(block -> block.get(block.size() - 2)) // Get unique ID
-                .collect(Collectors.toSet());
+                // Condensed print all but last 2 elements of each block row.
+                printIntervalCondensed(sBefore.usedAttributesPerBlock.get(i).subList(0, n - 1));
+            }
 
-        // Iterate through all blocks (0 to size - 1)
-        for (int i = 0; i < size; i++) {
-            if (afterBlockIds.contains(i)) {
-                // Block exists in sAfter, retrieve it
-                int finalI = i;
-                ArrayList<Integer> block = sAfter.usedAttributesPerBlock.stream()
-                        .filter(b -> b.get(b.size() - 2) == finalI)
+            System.out.print("\n\n\t= AFTER BLOCKS = ");
+            int size = sBefore.usedAttributesPerBlock.size();
+
+            // Create set of unique IDs present in sAfter for quick lookup
+            Set<Integer> afterBlockIds = sAfter.usedAttributesPerBlock.stream()
+                    .map(block -> block.get(block.size() - 2)) // Get unique ID
+                    .collect(Collectors.toSet());
+
+            // Iterate through all blocks (0 to size - 1)
+            for (int i = 0; i < size; i++) {
+                if (afterBlockIds.contains(i)) {
+                    // Block exists in sAfter, retrieve it
+                    int finalI = i;
+                    ArrayList<Integer> block = sAfter.usedAttributesPerBlock.stream()
+                            .filter(b -> b.get(b.size() - 2) == finalI)
+                            .findFirst()
+                            .orElse(null);
+
+                    if (block != null) {
+                        int n = block.size() - 1;
+                        int classIndex = block.get(n);
+                        String className = (classIndex >= 0 && classIndex < DV.uniqueClasses.size())
+                                ? DV.uniqueClasses.get(classIndex)
+                                : "Unknown";
+
+                        System.out.printf("\n\tBlock #%d from class \"%s\" :", i, className);
+                        printIntervalCondensed(block.subList(0, n - 1));
+                    }
+                } else {
+                    // If block was removed.
+                    System.out.printf("\n\tBlock #%d is DELETED.", i);
+                }
+            }
+
+            System.out.print("\n\n= ATTRIBUTES REMOVED BETWEEN BEFORE/AFTER BY BLOCK =");
+            for (ArrayList<Integer> afterBlock : sAfter.usedAttributesPerBlock) {
+                // Extract unique ID and class from the afterBlock
+                int uniqueId = afterBlock.get(afterBlock.size() - 2);
+                int bClass = afterBlock.get(afterBlock.size() - 1);
+
+                // Find the corresponding block in sBefore
+                ArrayList<Integer> beforeBlock = sBefore.usedAttributesPerBlock.stream()
+                        .filter(block -> block.get(block.size() - 2) == uniqueId)
                         .findFirst()
                         .orElse(null);
 
-                if (block != null) {
-                    int n = block.size() - 1;
-                    int classIndex = block.get(n);
-                    String className = (classIndex >= 0 && classIndex < DV.uniqueClasses.size())
-                            ? DV.uniqueClasses.get(classIndex)
-                            : "Unknown";
+                if (beforeBlock != null) {
+                    // Extract attributes (excluding last two elements)
+                    Set<Integer> beforeAttributes = new HashSet<>(beforeBlock.subList(0, beforeBlock.size() - 2));
+                    Set<Integer> afterAttributes = new HashSet<>(afterBlock.subList(0, afterBlock.size() - 2));
 
-                    System.out.printf("\n\tBlock #%d from class \"%s\" :", i, className);
-                    printIntervalCondensed(block.subList(0, n - 1));
+                    // Find removed attributes (present in before but not in after)
+                    beforeAttributes.removeAll(afterAttributes);
+
+                    // Convert the Set to a List
+                    List<Integer> removedAttributes = new ArrayList<>(beforeAttributes);
+
+                    // Print block ID, class, and removed attributes
+                    System.out.printf("\n\tBlock #%d (Class %s) attributes that were removed: ", uniqueId, DV.uniqueClasses.get(bClass));
+                    printIntervalCondensed(removedAttributes);
                 }
-            } else {
-                // If block was removed.
-                System.out.printf("\n\tBlock #%d is DELETED.", i);
             }
+
+            System.out.println("\n");
         }
-
-        System.out.print("\n\n= ATTRIBUTES REMOVED BETWEEN BEFORE/AFTER BY BLOCK =");
-        for (ArrayList<Integer> afterBlock : sAfter.usedAttributesPerBlock) {
-            // Extract unique ID and class from the afterBlock
-            int uniqueId = afterBlock.get(afterBlock.size() - 2);
-            int bClass = afterBlock.get(afterBlock.size() - 1);
-
-            // Find the corresponding block in sBefore
-            ArrayList<Integer> beforeBlock = sBefore.usedAttributesPerBlock.stream()
-                    .filter(block -> block.get(block.size() - 2) == uniqueId)
-                    .findFirst()
-                    .orElse(null);
-
-            if (beforeBlock != null) {
-                // Extract attributes (excluding last two elements)
-                Set<Integer> beforeAttributes = new HashSet<>(beforeBlock.subList(0, beforeBlock.size() - 2));
-                Set<Integer> afterAttributes = new HashSet<>(afterBlock.subList(0, afterBlock.size() - 2));
-
-                // Find removed attributes (present in before but not in after)
-                beforeAttributes.removeAll(afterAttributes);
-
-                // Convert the Set to a List
-                List<Integer> removedAttributes = new ArrayList<>(beforeAttributes);
-
-                // Print block ID, class, and removed attributes
-                System.out.printf("\n\tBlock #%d (Class %s) attributes that were removed: ", uniqueId, DV.uniqueClasses.get(bClass));
-                printIntervalCondensed(removedAttributes);
-            }
+        else{
+            statisticsGUI();
         }
-
-        System.out.println("\n");
     }
 
     private void printIntervalCondensed(List<Integer> attributes) {
