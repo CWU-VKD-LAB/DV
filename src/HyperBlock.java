@@ -1,7 +1,8 @@
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 
-public class HyperBlock
+public class HyperBlock implements Serializable
 {
     /*
         Supposed to hold all hyper-blocks data seperated by the outer list. Instead, holds only 1.

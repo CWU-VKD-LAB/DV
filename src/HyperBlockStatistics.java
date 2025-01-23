@@ -25,9 +25,10 @@ public class HyperBlockStatistics {
     private JPanel attrPanel;
     private JPanel blockPanel;
     private JFrame mainFrame;
+    private JFrame attributeVisWindow;
 
-    private int firstSetIdx;
-    private int secondSetIdx;
+    private int firstSetIdx = -1;
+    private int secondSetIdx =-1;
     private boolean showPercent = true;
 
     private ArrayList<HyperBlock> hyper_blocks;
@@ -137,9 +138,9 @@ public class HyperBlockStatistics {
 
         //Make all the panels
         simpPanel = createSimplificationPanel();
-        attrPanel = createAttrPanel();
-        clausePanel = createClausePanel();
-        blockPanel = createBlockPanel();
+        //attrPanel = createAttrPanel();
+        //clausePanel = createClausePanel();
+        //blockPanel = createBlockPanel();
 
         simpPanel.setPreferredSize(new Dimension(800, 400));
         mainFrame.add(simpPanel, BorderLayout.CENTER);
@@ -297,39 +298,143 @@ public class HyperBlockStatistics {
         return panel;
     }
 
+    private JScrollPane byBlockAttributeVis(statisticSet sBefore, statisticSet sAfter){
+        // Create the main panel with a preferred size
+        JPanel panel = new JPanel();
+        panel.setPreferredSize(new Dimension(1600, 900));
+
+        // Overall size needed for all the graphics
+        int totalImages = DV.uniqueClasses.size() + 1; // Including an optional "overall" category
+        int cols = 3;
+        int rows = (int) Math.ceil((double) totalImages / cols);
+
+        // Use GridLayout to arrange images
+        panel.setLayout(new GridLayout(rows, cols, 10, 10)); // 10px gap between components
+
+        // Calculate grid dimensions based on DV.fieldLen
+        int cellSize = 50; // Cell dimensions
+        int gridSize = (int) Math.ceil(Math.sqrt(DV.fieldLength)); // Determine grid rows/cols
+
+        // Add a component for each block.
+        for (ArrayList<Integer> afterBlock : sAfter.usedAttributesPerBlock) {
+            // Extract unique ID and class from the afterBlock
+            int uniqueId = afterBlock.get(afterBlock.size() - 2);
+            int bClass = afterBlock.get(afterBlock.size() - 1);
+
+            // Find the corresponding block in sBefore
+            ArrayList<Integer> beforeBlock = sBefore.usedAttributesPerBlock.stream()
+                    .filter(block -> block.get(block.size() - 2) == uniqueId)
+                    .findFirst()
+                    .orElse(null);
+
+            if (beforeBlock != null) {
+                JPanel graphicPanel = new JPanel(new BorderLayout());
+                JLabel graphicLabel = new JLabel(String.format("Block: %d -- Class %s", uniqueId, DV.uniqueClasses.get(bClass)));
+
+                // Extract attributes (excluding last two elements)
+                Set<Integer> removedSet = new HashSet<>(beforeBlock.subList(0, beforeBlock.size() - 2));
+                Set<Integer> beforeSet = new HashSet<>(beforeBlock.subList(0, beforeBlock.size() - 2));
+
+                Set<Integer> afterAttributes = new HashSet<>(afterBlock.subList(0, afterBlock.size() - 2));
+
+                // Find removed attributes (present in before but not in after)
+                removedSet.removeAll(afterAttributes);
+
+                // Generate the grid image
+                BufferedImage gridImage = createGridImage(gridSize, gridSize, cellSize, cellSize, DV.fieldLength, removedSet, beforeSet);
+                JLabel imageElement = new JLabel(new ImageIcon(gridImage));
+
+                // Add components to the graphic panel
+                graphicPanel.add(graphicLabel, BorderLayout.NORTH);
+                graphicPanel.add(imageElement, BorderLayout.CENTER);
+
+                // Add the graphic panel to the main panel
+                panel.add(graphicPanel);
+            }
+        }
+
+        // Add the panel to the JFrame and make it visible
+        return new JScrollPane(panel);
+    }
+
+    private JScrollPane byClassAttributeVis(statisticSet sBefore, statisticSet sAfter){
+        // Create the main panel with a preferred size
+        JPanel panel = new JPanel();
+        panel.setPreferredSize(new Dimension(1600, 900));
+
+        // Overall size needed for all the graphics
+        int totalImages = DV.uniqueClasses.size() + 1; // Including an optional "overall" category
+        int cols = 3;
+        int rows = (int) Math.ceil((double) totalImages / cols);
+
+        // Use GridLayout to arrange images
+        panel.setLayout(new GridLayout(rows, cols, 10, 10)); // 10px gap between components
+
+        // Calculate grid dimensions based on DV.fieldLen
+        int cellSize = 50; // Cell dimensions
+        int gridSize = (int) Math.ceil(Math.sqrt(DV.fieldLength)); // Determine grid rows/cols
+
+        // Add components for each class
+        for (int i = 0; i < DV.uniqueClasses.size(); i++) {
+            // Create a new panel for each graphic
+            JPanel graphicPanel = new JPanel(new BorderLayout());
+            JLabel graphicLabel = new JLabel("Class: " + DV.uniqueClasses.get(i));
+
+            // Compute removed and existing attributes
+            ArrayList<Integer> removed = new ArrayList<>(sBefore.usedAttributesByClass.get(i));
+            removed.removeAll(sAfter.usedAttributesByClass.get(i));
+            Set<Integer> removedSet = new HashSet<>(removed);
+            Set<Integer> beforeSet = new HashSet<>(sBefore.usedAttributesByClass.get(i));
+
+            // Generate the grid image
+            BufferedImage gridImage = createGridImage(gridSize, gridSize, cellSize, cellSize, DV.fieldLength, removedSet, beforeSet);
+            JLabel imageElement = new JLabel(new ImageIcon(gridImage));
+
+            // Add components to the graphic panel
+            graphicPanel.add(graphicLabel, BorderLayout.NORTH);
+            graphicPanel.add(imageElement, BorderLayout.CENTER);
+
+            // Add the graphic panel to the main panel
+            panel.add(graphicPanel);
+        }
+
+        // Add the panel to the JFrame and make it visible
+        return new JScrollPane(panel);
+    }
+
+    private void createAttributeVisWindow(statisticSet sBefore, statisticSet sAfter) {
+        // Create a new JFrame for the attribute visualization
+        attributeVisWindow = new JFrame("Attribute Visualization");
+        attributeVisWindow.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+
+        JScrollPane byClass = byClassAttributeVis(sBefore, sAfter);
+        JScrollPane byBlock = byBlockAttributeVis(sBefore, sAfter);
+
+        attributeVisWindow.add(byBlock);
+
+        attributeVisWindow.pack(); // Adjust size based on content
+        attributeVisWindow.setLocationRelativeTo(null); // Center on screen
+        attributeVisWindow.setVisible(false);
+    }
+
+
     private JPanel createAttrPanel() {
         statisticSet sBefore = statisticHistory.get(firstSetIdx);
         statisticSet sAfter = statisticHistory.get(secondSetIdx);
+        JPanel panel = new JPanel(new BorderLayout());
 
-        ArrayList<Integer> removed = new ArrayList<>(sBefore.usedAttributes);
-        removed.removeAll(sAfter.usedAttributes);
-        Set<Integer> removedSet = new HashSet<>(removed);
-        Set<Integer> beforeSet = new HashSet<>(sBefore.usedAttributes);
-        System.out.println(removed);
+        createAttributeVisWindow(sBefore, sAfter);
 
-        JPanel panel = new JPanel();
-        panel.setPreferredSize(new Dimension(1600, 900));
-        panel.setLayout(new BorderLayout()); // Use BorderLayout to center the grid
-
-        JLabel label = new JLabel("Attributes", SwingConstants.CENTER);
-        label.setFont(new Font("Arial", Font.BOLD, 16));
-        panel.add(label, BorderLayout.NORTH);
+        JButton showVisBtn = new JButton("Show Visualizations");
+        showVisBtn.addActionListener(e -> attributeVisWindow.setVisible(true));
+        panel.add(showVisBtn, BorderLayout.SOUTH);
 
 
-        // Calculate grid dimensions based on DV.fieldLen
-        int totalAttributes = DV.fieldLength;
-        int cellSize = 50; // Size of each cell (adjust as needed)
-        int gridSize = (int) Math.ceil(Math.sqrt(totalAttributes)); // n x n grid size
-
-        // Create a BufferedImage for the grid
-        BufferedImage gridImage = createGridImage(gridSize, gridSize, cellSize, cellSize, totalAttributes, removedSet, beforeSet);
-
-        // Display the image in a JLabel
-        JLabel imageLabel = new JLabel(new ImageIcon(gridImage));
-        panel.add(imageLabel, BorderLayout.CENTER);
 
         return panel;
     }
+
+
 
     // Method to create a grid as a BufferedImage
     private BufferedImage createGridImage(int rows, int cols, int cellWidth, int cellHeight, int totalAttributes, Set<Integer> removedSet, Set<Integer> beforeSet) {
@@ -456,13 +561,14 @@ public class HyperBlockStatistics {
 
         JButton generateComparison = new JButton("Generate Comparison");
         generateComparison.addActionListener(e->{
-            int firstSetIdx = (Integer) firstSpinner.getValue();
-            int secondSetIdx = (Integer) secondSpinner.getValue();
+            firstSetIdx = (Integer) firstSpinner.getValue();
+            secondSetIdx = (Integer) secondSpinner.getValue();
 
             if (firstSetIdx == secondSetIdx || secondSetIdx < firstSetIdx) {
                 JOptionPane.showMessageDialog(null, "Please select different indices for comparison.");
                 return;
             }
+            System.out.printf("Comparing %d set to %d set", firstSetIdx, secondSetIdx);
 
             // Compare the stat set at elements
             genGUIComparison();
@@ -503,35 +609,15 @@ public class HyperBlockStatistics {
 
         JButton clauseTabBtn= new JButton("Clauses");
         clauseTabBtn.setPreferredSize(new Dimension(200, 25));
-        clauseTabBtn.addActionListener(e ->{
-            // Show the clauses tab
-            mainFrame.getContentPane().remove(mainFrame.getContentPane().getComponent(2));
-            mainFrame.add(clausePanel, BorderLayout.CENTER);
-            mainFrame.revalidate();
-            mainFrame.repaint();
-
-        });
+        clauseTabBtn.addActionListener(e -> navigationHandler(clausePanel));
 
         JButton blocksBtn = new JButton("Blocks");
         blocksBtn.setPreferredSize(new Dimension(200, 25));
-        blocksBtn.addActionListener(e ->{
-            // Show the blocks tab
-            mainFrame.getContentPane().remove(mainFrame.getContentPane().getComponent(2));
-            mainFrame.add(blockPanel, BorderLayout.CENTER);
-            mainFrame.revalidate();
-            mainFrame.repaint();
-
-        });
+        blocksBtn.addActionListener(e -> navigationHandler(blockPanel));
 
         JButton attrBtn = new JButton("Attributes");
         attrBtn.setPreferredSize(new Dimension(200, 25));
-        attrBtn.addActionListener(e ->{
-            // Show the attributes tab
-            mainFrame.getContentPane().remove(mainFrame.getContentPane().getComponent(2));
-            mainFrame.add(attrPanel, BorderLayout.CENTER);
-            mainFrame.revalidate();
-            mainFrame.repaint();
-        });
+        attrBtn.addActionListener(e -> navigationHandler(attrPanel));
 
 
         toolBar.add(simpTabBtn);
@@ -540,6 +626,27 @@ public class HyperBlockStatistics {
         toolBar.add(attrBtn);
 
         return toolBar;
+    }
+
+    /**
+     * Shows the panel for a statistics panel. If a comparison is generated, we will
+     * show the page the button clicked on.
+     * @param panelToShow The comparison panel to show. Ex. clausePanel
+     */
+    private void navigationHandler(JPanel panelToShow){
+        if (firstSetIdx != -1 && secondSetIdx != -1) {
+            // Show the attributes tab
+            mainFrame.getContentPane().remove(mainFrame.getContentPane().getComponent(2));
+            mainFrame.add(panelToShow, BorderLayout.CENTER);
+            mainFrame.revalidate();
+            mainFrame.repaint();
+        }
+        else{
+            JOptionPane.showMessageDialog(mainFrame,
+                    "Please choose two block states to compare, then click 'Generate Statistics'.",
+                    "Selection Required",
+                    JOptionPane.WARNING_MESSAGE);
+        }
     }
 
     /**

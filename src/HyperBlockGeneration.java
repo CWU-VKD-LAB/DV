@@ -1,6 +1,7 @@
 import org.jfree.chart.*;
 import org.jfree.chart.axis.NumberAxis;
 import org.jfree.chart.axis.NumberTickUnit;
+import org.jfree.chart.axis.SymbolAxis;
 import org.jfree.chart.axis.ValueAxis;
 import org.jfree.chart.plot.XYPlot;
 import org.jfree.chart.renderer.xy.XYAreaRenderer;
@@ -88,10 +89,10 @@ public class HyperBlockGeneration
     boolean remove_extra = false;
 
     record Interval(double start, double end) {}
-
+    boolean useSaved = false;
     HyperBlockStatistics blockStats;
 
-    HyperBlockGeneration() {
+    HyperBlockGeneration(){
         // set purity threshold
         if (explain_ldf)
             acc_threshold = DV.accuracy;
@@ -101,8 +102,30 @@ public class HyperBlockGeneration
 
         // generate hyperblocks, and print hyperblock info
         getData();
-        generateHBs(false);
+        /*
 
+
+        if(useSaved){
+            try {
+                // Deserialize the ArrayList of HyperBlock objects from the file
+                FileInputStream fileIn = new FileInputStream("mnist2_7.ser");
+                ObjectInputStream in = new ObjectInputStream(fileIn);
+                hyper_blocks = (ArrayList<HyperBlock>) in.readObject();
+                in.close();
+                fileIn.close();
+            } catch (FileNotFoundException e) {
+                throw new RuntimeException(e);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            } catch (ClassNotFoundException e) {
+                throw new RuntimeException(e);
+            }
+
+        }else{
+            generateHBs(false);
+        }
+        */
+        generateHBs(false);
         HB_analytics();
 
         System.out.println(DV.trainData.get(1).data.length);
@@ -128,6 +151,24 @@ public class HyperBlockGeneration
         blockStats = new HyperBlockStatistics(this);
         // k-fold used to be here
         //test_HBs();
+
+
+        try{
+            saveHyperBlocksToFile("test.ser");
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        } catch (ClassNotFoundException e) {
+            throw new RuntimeException(e);
+        }
+
+    }
+
+    private void saveHyperBlocksToFile(String fileName) throws IOException, ClassNotFoundException {
+        FileOutputStream fileOut = new FileOutputStream(fileName);
+        ObjectOutputStream out = new ObjectOutputStream(fileOut);
+        out.writeObject(hyper_blocks);
+        out.close();
+        fileOut.close();
     }
 
     public void expandWithRealEdges(int hb_num, boolean[] attributes){
@@ -557,14 +598,14 @@ public class HyperBlockGeneration
 
 
         // Host variables
-        double[] mins = new double[fMinMaxResult[0].length];
+        float[] mins = new float[fMinMaxResult[0].length];
         for(int i = 0; i < fMinMaxResult[0].length; i++){
-            mins[i] = fMinMaxResult[0][i];
+            mins[i] = fMinMaxResult[0][i].floatValue();
         }
 
-        double[] maxes = new double[fMinMaxResult[1].length];
+        float[] maxes = new float[fMinMaxResult[1].length];
         for(int i = 0; i < fMinMaxResult[1].length; i++){
-            maxes[i] = fMinMaxResult[1][i];
+            maxes[i] = fMinMaxResult[1][i].floatValue();
         }
 
         int minMaxLen = mins.length;
@@ -589,9 +630,10 @@ public class HyperBlockGeneration
 
         byte[] attrRemoveFlags = new byte[hyper_blocks.size() * DV.fieldLength];
 
-        double[] dataset = new double[fDataResult[0].length];
+        //TODO:
+        float[] dataset = new float[fDataResult[0].length];
         for(int i = 0; i < fDataResult[0].length; i++){
-            dataset[i] = fDataResult[0][i];
+            dataset[i] = fDataResult[0][i].floatValue();
         }
 
         int numPoints = dataset.length / DV.fieldLength;
@@ -601,12 +643,12 @@ public class HyperBlockGeneration
             classBorder[i] = fDataResult[1][i].intValue();
         }
 
-        CUdeviceptr d_mins = CudaUtil.allocateAndCopy(mins, Sizeof.DOUBLE);
-        CUdeviceptr d_maxes = CudaUtil.allocateAndCopy(maxes, Sizeof.DOUBLE);
+        CUdeviceptr d_mins = CudaUtil.allocateAndCopy(mins, Sizeof.FLOAT);
+        CUdeviceptr d_maxes = CudaUtil.allocateAndCopy(maxes, Sizeof.FLOAT);
         CUdeviceptr d_blockEdges = CudaUtil.allocateAndCopy(blockEdges, Sizeof.INT);
         CUdeviceptr d_blockClasses = CudaUtil.allocateAndCopy(blockClasses, Sizeof.INT);
         CUdeviceptr d_attrRemoveFlags = CudaUtil.allocateAndCopy(attrRemoveFlags, Sizeof.BYTE);
-        CUdeviceptr d_dataset = CudaUtil.allocateAndCopy(dataset, Sizeof.DOUBLE);
+        CUdeviceptr d_dataset = CudaUtil.allocateAndCopy(dataset, Sizeof.FLOAT);
         CUdeviceptr d_classBorder = CudaUtil.allocateAndCopy(classBorder, Sizeof.INT);
         CUdeviceptr d_intervalCounts = CudaUtil.allocateAndCopy(intervalCounts, Sizeof.INT);
 
@@ -2694,7 +2736,15 @@ public class HyperBlockGeneration
         XYPlot plot = ChartsAndPlots.createHBPlot(pcChart, graphColors[tempBlock.classNum]);
         PC_DomainAndRange(plot);
 
+        //TODO: USE THIS WHEN WE SHOW ONLY non-removed attributes
+        /* Can use this to build the labels x0, x1, x2
+        String[] customLabels = {};
+        SymbolAxis domainAxis = new SymbolAxis("", customLabels);
+        domainAxis.setTickLabelsVisible(true);
 
+        // Apply the custom axis to the plot
+        plot.setDomainAxis(domainAxis);
+        */
 
         // Set renderers and datasets for avg and good/bad graph lines
         plot.setRenderer(0, avgRenderer);
@@ -2727,11 +2777,17 @@ public class HyperBlockGeneration
         ArrayList<ArrayList<Double>> outlineList = new ArrayList<>();
         ArrayList<ArrayList<Double>> areaList = new ArrayList<>();
         int numMaxIntv = tempBlock.getMaxDisjunctiveORs();
+
+        //TODO: AUSTIN: If show only remanining, need to alter this to make right size
+        // outline list, aka -2 on the n copies each time we find a removed attribute.
+        // Also will require us to skip over the removed ones and put the next ones in the spot
+        // that the removed one would have taken
         for(int i = 0; i < numMaxIntv; i++){
             // Set up all the rows for the intervals.
             outlineList.add(i, new ArrayList<>(Collections.nCopies(DV.fieldLength * 2, null)));
             areaList.add(i, new ArrayList<>(Collections.nCopies(DV.fieldLength * 2, null)));
         }
+
 
         // If the block has more than 1 datapoint in it.
         if (tempBlock.hyper_block.get(0).size() > 1)
@@ -2783,6 +2839,10 @@ public class HyperBlockGeneration
 
                 series.add(attr, value);
             }
+
+
+            //TODO: If viewing only remaining attributes, we need to connect to
+            // the first non-removed attributes to close the shape
 
             // Add in the first attributes min to close the shape.
             if(outlineList.get(i).get(0) != null){

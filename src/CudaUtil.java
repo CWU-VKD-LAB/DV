@@ -28,4 +28,11 @@ public final class CudaUtil {
         cuMemcpyHtoD(devicePointer, Pointer.to(hostData), (long) hostData.length * sizeOfElement);
         return devicePointer;
     }
+
+    public static CUdeviceptr allocateAndCopy(float[] hostData, int sizeOfElement) {
+        CUdeviceptr devicePointer = new CUdeviceptr();
+        cuMemAlloc(devicePointer, (long) hostData.length * sizeOfElement);
+        cuMemcpyHtoD(devicePointer, Pointer.to(hostData), (long) hostData.length * sizeOfElement);
+        return devicePointer;
+    }
 }
