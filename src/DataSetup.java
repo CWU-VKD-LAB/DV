@@ -4,6 +4,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.*;
 import java.util.List;
+import java.util.concurrent.*;
 
 public class DataSetup
 {
@@ -597,37 +598,56 @@ public class DataSetup
      * @param dataFile .csv file holding data
      * @return String[][] representation of dataFile
      */
-    private static String[][] getStringFromCSV(File dataFile)
-    {
-        try (Scanner fileReader = new Scanner(dataFile))
-        {
-            ArrayList<String> rowData = new ArrayList<>();
+    public static String[][] getStringFromCSV(File dataFile) {
+        //long startTime = System.nanoTime();
 
-            // put rows of data into arraylist
-            while(fileReader.hasNextLine())
+        // Executor service to handle parallel tasks
+        ExecutorService executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+
+        try (Scanner fileReader = new Scanner(dataFile)) {
+            List<Callable<String[]>> tasks = new ArrayList<>();
+            List<String> rowData = new ArrayList<>();
+
+            // Read all rows and store them
+            while (fileReader.hasNextLine()) {
                 rowData.add(fileReader.nextLine());
-
-            ArrayList<String[]> data = new ArrayList<>();
-
-            // split rows by ","
-            for (String rowDatum : rowData)
-            {
-                String[] tmp = rowDatum.split(",");
-
-                // only add if there is data
-                if (tmp.length > 0)
-                    data.add(tmp);
             }
 
-            // arraylist to array
-            String[][] outputData = new String[data.size()][];
-            outputData = data.toArray(outputData);
+            // Split the rows in parallel
+            for (String row : rowData) {
+                tasks.add(() -> row.split(","));
+            }
 
+            // Submit tasks for parallel execution
+            List<Future<String[]>> results = executorService.invokeAll(tasks);
+
+            // Collect the results
+            List<String[]> data = new ArrayList<>();
+            for (Future<String[]> result : results) {
+                try {
+                    String[] row = result.get();  // Get the result of the task
+                    if (row.length > 0) {
+                        data.add(row);
+                    }
+                } catch (InterruptedException | ExecutionException e) {
+                    e.printStackTrace();
+                }
+            }
+
+            // Convert list of arrays to 2D array
+            String[][] outputData = new String[data.size()][];
+            data.toArray(outputData);
+            //long endTime = System.nanoTime();
+            //long elapsedTime = (endTime - startTime) / 1_000_000; // Convert to milliseconds
+            //System.out.println("Execution time for parallel reading: " + elapsedTime + " milliseconds");
             return outputData;
-        }
-        catch(IOException ioe)
-        {
+
+        } catch (IOException | InterruptedException e) {
+            e.printStackTrace();
             return null;
+        } finally {
+            // Shutdown the executor service
+            executorService.shutdown();
         }
     }
 
