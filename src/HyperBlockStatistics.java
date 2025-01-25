@@ -1,4 +1,5 @@
 import javax.swing.*;
+import javax.swing.border.EmptyBorder;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.lang.reflect.Array;
@@ -20,6 +21,8 @@ import java.util.stream.Collectors;
  */
 public class HyperBlockStatistics {
 
+
+    final int SIMP_PANELS_FONTSIZE = 14;
     private JPanel simpPanel;
     private JPanel clausePanel;
     private JPanel attrPanel;
@@ -138,9 +141,6 @@ public class HyperBlockStatistics {
 
         //Make all the panels
         simpPanel = createSimplificationPanel();
-        //attrPanel = createAttrPanel();
-        //clausePanel = createClausePanel();
-        //blockPanel = createBlockPanel();
 
         simpPanel.setPreferredSize(new Dimension(800, 400));
         mainFrame.add(simpPanel, BorderLayout.CENTER);
@@ -160,9 +160,12 @@ public class HyperBlockStatistics {
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
 
         JLabel headerLabel = new JLabel(header);
+
+        //String blockChangeStr = String.format(showPercent ? "%.3f%%" : "%.3f", blockChange);
+
         JLabel totalBlocks = new JLabel(String.valueOf(stats.numBlocks));
         JLabel smallBlocks = new JLabel(String.valueOf(stats.numSmallHBs));
-        JLabel avgPointsPerBlock = new JLabel(String.valueOf(stats.averageHBSize));
+        JLabel avgPointsPerBlock = new JLabel(String.format("%.3f", stats.averageHBSize));
 
         panel.add(headerLabel);
         addWhiteSpace(panel);
@@ -172,8 +175,11 @@ public class HyperBlockStatistics {
         panel.add(avgPointsPerBlock);
 
         for (double avg : stats.averageSizeByClass) {
-            panel.add(new JLabel(String.valueOf(avg)));
+            panel.add(new JLabel(String.format("%.3f", avg)));
         }
+
+        adjustLabelFontAndPadding(panel, SIMP_PANELS_FONTSIZE);
+
         return panel;
     }
 
@@ -183,26 +189,33 @@ public class HyperBlockStatistics {
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
 
         // Calculate the differences
-        double blockChange = ((double) sAfter.numBlocks / sBefore.numBlocks) * 100.0;
-        double smallBlockChange = ((double) sAfter.numSmallHBs / sBefore.numSmallHBs) * 100.0;
-        double averageBlockSizeChange = -((sAfter.averageHBSize / sBefore.averageHBSize) * 100.0);
+        double blockChange = ((double) (sAfter.numBlocks - sBefore.numBlocks) / sBefore.numBlocks) * 100.0;
+        double smallBlockChange = ((double) (sAfter.numSmallHBs - sBefore.numSmallHBs) / sBefore.numSmallHBs) * 100.0;
+        double averageBlockSizeChange = ((sAfter.averageHBSize - sBefore.averageHBSize) / sBefore.averageHBSize) * 100.0;
 
-        if (showPercent) {
-            blockChange = 100 - blockChange;
-            smallBlockChange = 100 - smallBlockChange;
-            averageBlockSizeChange = -(100 - (-1 * averageBlockSizeChange));
+        // Handle raw mode
+        if (!showPercent) {
+            blockChange = sAfter.numBlocks - sBefore.numBlocks;
+            smallBlockChange = sAfter.numSmallHBs - sBefore.numSmallHBs;
+            averageBlockSizeChange = sAfter.averageHBSize - sBefore.averageHBSize;
         }
 
-        // Format the numbers with percentage symbols when in percent mode
-        String blockChangeStr = String.format(showPercent ? "%.3f%%" : "%.3f", blockChange);
-        String smallBlockChangeStr = String.format(showPercent ? "%.3f%%" : "%.3f", smallBlockChange);
-        String avgBlockSizeChangeStr = String.format(showPercent ? "%.3f%%" : "%.3f", averageBlockSizeChange);
+        // Format the numbers with percentage symbols in percent mode
+        String blockChangeStr = String.format(showPercent ? "%s%.3f%%" : "%s%.3f", signOfNumber(blockChange), blockChange);
+        String smallBlockChangeStr = String.format(showPercent ? "%s%.3f%%" : "%s%.3f",signOfNumber(smallBlockChange), smallBlockChange);
+        String avgBlockSizeChangeStr = String.format(showPercent ? "%s%.3f%%" : "%s%.3f",signOfNumber(averageBlockSizeChange), averageBlockSizeChange);
 
         // Add components to the panel
         JLabel diffHeader = new JLabel("Difference");
         JLabel tb_Diff = new JLabel(blockChangeStr);
         JLabel sb_Diff = new JLabel(smallBlockChangeStr);
         JLabel avgPPB_Diff = new JLabel(avgBlockSizeChangeStr);
+
+
+        // Apply color coding
+        applyColorCoding(tb_Diff, blockChange);
+        applyColorCoding(sb_Diff, smallBlockChange);
+        applyColorCoding(avgPPB_Diff, averageBlockSizeChange);
 
         panel.add(diffHeader);
         addWhiteSpace(panel);
@@ -211,8 +224,57 @@ public class HyperBlockStatistics {
         addWhiteSpace(panel);
         panel.add(avgPPB_Diff);
 
+        adjustLabelFontAndPadding(panel, SIMP_PANELS_FONTSIZE);
         return panel;
     }
+
+
+    private char signOfNumber(double num) {
+        return Math.signum(num) > 0 ? '+' : (Math.signum(num) < 0 ? '-' : '0');
+    }
+    /////
+
+
+    /**
+     * Helper function for color coding the difference columns.
+     * neg = Red, pos = Green, 0 = Black.
+     * @param label The label to apply the color to.
+     * @param value The value the label is holding.
+     */
+    private void applyColorCoding(JLabel label, double value) {
+        if (value > 0) {
+            label.setForeground(new Color(70, 128, 66));
+        } else if (value < 0) {
+            label.setForeground(new Color(140, 22, 46));
+        } else {
+            label.setForeground(Color.BLACK);
+        }
+    }
+
+    /**
+     * Function to recursively increase the size of all labels that fall within a panel.
+     * Will go to sub-panels and try to increase their label font size too.
+     * @param panel JPanel to use.
+     * @param size Font size.
+     */
+    private void adjustLabelFontAndPadding(JPanel panel, int size) {
+        for (Component comp : panel.getComponents()) {
+            if (comp instanceof JLabel) {
+                JLabel label = (JLabel) comp;
+                Font currentFont = label.getFont();
+                label.setFont(new Font(currentFont.getName(), currentFont.getStyle(), size));
+                label.setBorder(new EmptyBorder(0, 0, 10, 0));
+            }
+            else if (comp instanceof JPanel){
+                adjustLabelFontAndPadding((JPanel) comp, size);
+            }
+        }
+
+        // Revalidate and repaint the panel to reflect changes
+        panel.revalidate();
+        panel.repaint();
+    }
+
 
 
     private JPanel createBlockPanel() {
@@ -221,16 +283,15 @@ public class HyperBlockStatistics {
 
         JPanel labelPanel = new JPanel();
         labelPanel.setLayout(new BoxLayout(labelPanel, BoxLayout.Y_AXIS));
-        ArrayList<String> labels = new ArrayList<>(List.of("Total Blocks", "Small Blocks",
+        ArrayList<String> labels = new ArrayList<>(List.of("\n", "Total Blocks", "Small Blocks",
                                                             "Avg. Points per Block", "Total"));
         for(String uClass : DV.uniqueClasses){
             labels.add("Class \"" + uClass + "\"");
         }
 
         // If a label is a header, mark it. //TODO: find a better way to do this later.
-        Set<Integer> headers = new HashSet<>(Set.of(2));
+        Set<Integer> headers = new HashSet<>(Set.of(3));
 
-        addWhiteSpace(labelPanel);
         addWhiteSpace(labelPanel);
         for (int i = 0; i < labels.size(); i++) {
             JLabel tmp = new JLabel(labels.get(i));
@@ -279,6 +340,8 @@ public class HyperBlockStatistics {
         panel.add(differencePanel);
         panel.add(toggleUnit);
 
+        adjustLabelFontAndPadding(panel, SIMP_PANELS_FONTSIZE);
+
         return panel;
 
     }
@@ -286,7 +349,7 @@ public class HyperBlockStatistics {
 
 
     private void addWhiteSpace(JPanel panel){
-        panel.add(Box.createRigidArea(new Dimension(0, 10)));
+        panel.add(Box.createRigidArea(new Dimension(0, 20)));
     }
 
     private JPanel createClausePanel() {
@@ -407,16 +470,23 @@ public class HyperBlockStatistics {
         attributeVisWindow = new JFrame("Attribute Visualization");
         attributeVisWindow.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
 
+        // Create the JTabbedPane
+        JTabbedPane tabbedPane = new JTabbedPane();
+
+        // Add tabs for each visualization
         JScrollPane byClass = byClassAttributeVis(sBefore, sAfter);
+        tabbedPane.addTab("By Class", byClass);
+
         JScrollPane byBlock = byBlockAttributeVis(sBefore, sAfter);
+        tabbedPane.addTab("By Block", byBlock);
 
-        attributeVisWindow.add(byBlock);
+        // Add the tabbed pane to the window
+        attributeVisWindow.add(tabbedPane);
 
-        attributeVisWindow.pack(); // Adjust size based on content
-        attributeVisWindow.setLocationRelativeTo(null); // Center on screen
+        attributeVisWindow.pack();
+        attributeVisWindow.setLocationRelativeTo(null);
         attributeVisWindow.setVisible(false);
     }
-
 
     private JPanel createAttrPanel() {
         statisticSet sBefore = statisticHistory.get(firstSetIdx);
@@ -429,10 +499,9 @@ public class HyperBlockStatistics {
         showVisBtn.addActionListener(e -> attributeVisWindow.setVisible(true));
         panel.add(showVisBtn, BorderLayout.SOUTH);
 
-
-
         return panel;
     }
+
 
 
 

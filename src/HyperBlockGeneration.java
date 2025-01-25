@@ -2244,10 +2244,13 @@ public class HyperBlockGeneration
         toolBar.add(simplificationsL);
         toolBar.addSeparator();
 
+        //TODO: Implement splitting of train and test on hyperblocks before using this.
         changeSplitBtn = new JButton("Data Split");
         changeSplitBtn.addActionListener(e ->
                 trainSplitPanel.setVisible(true));
-        toolBar.add(changeSplitBtn);
+        //toolBar.add(changeSplitBtn);
+
+
         simplifications = new JComboBox<>(new String[] {
                 "Remove Useless Attributes",
                 "CUDA RUA",
