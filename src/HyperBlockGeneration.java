@@ -102,13 +102,13 @@ public class HyperBlockGeneration
 
         // generate hyperblocks, and print hyperblock info
         getData();
-        /*
+
 
 
         if(useSaved){
             try {
                 // Deserialize the ArrayList of HyperBlock objects from the file
-                FileInputStream fileIn = new FileInputStream("mnist2_7.ser");
+                FileInputStream fileIn = new FileInputStream("test.ser");
                 ObjectInputStream in = new ObjectInputStream(fileIn);
                 hyper_blocks = (ArrayList<HyperBlock>) in.readObject();
                 in.close();
@@ -122,22 +122,40 @@ public class HyperBlockGeneration
             }
 
         }else{
-            generateHBs(false);
+            long startTime = System.currentTimeMillis();
+                generateHBs(false);
+            long endTime = System.currentTimeMillis();
+            long duration = endTime - startTime;
+            System.out.println("Generate Hbs: " + duration + " ms");
         }
-        */
-        generateHBs(false);
-        HB_analytics();
 
-        System.out.println(DV.trainData.get(1).data.length);
+        //Time taken for analytics
+        long startTime = System.currentTimeMillis();
+        HB_analytics();
+        long endTime = System.currentTimeMillis();
+        long duration = endTime - startTime;
+        System.out.println("Analytics: " + duration + " ms");
+
         // visualize hyperblocks
         if (!hyper_blocks.isEmpty())
         {
-            HB_GUI();
-            getPlot();
+            long hbS = System.currentTimeMillis();
+                    HB_GUI();
+            long hbE = System.currentTimeMillis();
+            long hbD = hbE - hbS;
+            System.out.println("HB_GUI: " + hbD + " ms");
+
+
+            hbS = System.currentTimeMillis();
+                    getPlot();
+            hbE = System.currentTimeMillis();
+            hbD = hbE - hbS;
+            System.out.println("getPlot: " + hbD + " ms");
         }
 
         HB_analytics();
 
+        long startTime2 = System.currentTimeMillis();
         /**
          * Set the original position of blocks in the list
          * This helps with keeping track of what blocks
@@ -149,18 +167,22 @@ public class HyperBlockGeneration
         }
 
         blockStats = new HyperBlockStatistics(this);
+        long endTime2 = System.currentTimeMillis();
+        long duration2 = endTime2 - startTime2;
+        System.out.println("Stats stuff: " + duration2 + " ms");
+
         // k-fold used to be here
         //test_HBs();
 
-
+        /*
         try{
-            saveHyperBlocksToFile("test.ser");
+            //saveHyperBlocksToFile("test.ser");
         } catch (IOException e) {
             throw new RuntimeException(e);
         } catch (ClassNotFoundException e) {
             throw new RuntimeException(e);
         }
-
+        */
     }
 
     private void saveHyperBlocksToFile(String fileName) throws IOException, ClassNotFoundException {
@@ -562,6 +584,120 @@ public class HyperBlockGeneration
         }
     }
 
+    private void removeUselessBlocksCuda(){
+        //assignPointsToBlocks(float *dataPointsArray, int numAttributes, int numPoints, float *blockMins, float *blockMaxes, int *blockEdges, int numBlocks, int *dataPointBlocks, int *numPointsInBlocks){
+        long startTime = System.currentTimeMillis();
+
+        JCudaDriver.setExceptionsEnabled(true);
+        cuInit(0);
+
+        // Create a context
+        CUdevice device = new CUdevice();
+        cuDeviceGet(device, 0);
+        CUcontext context = new CUcontext();
+        cuCtxCreate(context, 0, device);
+
+        // Load the kernel
+        CUmodule module1 = new CUmodule();
+        cuModuleLoad(module1, ".\\src\\RemoveUselessBlocksCuda.ptx");
+        CUfunction uselessBlockHelper = new CUfunction();
+        cuModuleGetFunction(uselessBlockHelper, module1, "removeBlocksHelper");
+
+
+
+        System.out.println("Didnt crash yet?");
+        Float[][] fMinMaxResult = flattenMinsMaxesForCUDA();
+        Float[][] fDataResult = flattenDataset();
+
+
+
+        //////////////////
+        float[] blockMins = new float[fMinMaxResult[0].length];
+        for(int i = 0; i < fMinMaxResult[0].length; i++){
+            blockMins[i] = fMinMaxResult[0][i];
+        }
+
+        float[] blockMaxes = new float[fMinMaxResult[1].length];
+        for(int i = 0; i < fMinMaxResult[1].length; i++){
+            blockMaxes[i] = fMinMaxResult[1][i];
+        }
+
+
+        int[] blockEdges = new int[fMinMaxResult[2].length];
+        for(int i = 0; i < fMinMaxResult[2].length; i++){
+            blockEdges[i] = fMinMaxResult[2][i].intValue();
+        }
+
+        float[] dataPointsArray = new float[fDataResult[0].length];
+        for(int i = 0; i < fDataResult[0].length; i++){
+            dataPointsArray[i] = fDataResult[0][i];
+        }
+
+        int numPoints = dataPointsArray.length / DV.fieldLength;
+
+        int[] dataPointBlocks = new int[numPoints];
+        int[] numPointsInBlocks = new int[hyper_blocks.size()];
+        /////////////////
+
+        // Make device pointers
+        CUdeviceptr d_dataPointsArray = CudaUtil.allocateAndCopy(dataPointsArray, Sizeof.FLOAT);
+        CUdeviceptr d_blockMins = CudaUtil.allocateAndCopy(blockMins, Sizeof.FLOAT);
+        CUdeviceptr d_blockMaxes = CudaUtil.allocateAndCopy(blockMaxes, Sizeof.FLOAT);
+        CUdeviceptr d_blockEdges = CudaUtil.allocateAndCopy(blockEdges, Sizeof.INT);
+        CUdeviceptr d_dataPointBlocks = CudaUtil.allocateAndCopy(dataPointBlocks, Sizeof.INT);
+        CUdeviceptr d_numPointsInBlocks = CudaUtil.allocateAndCopy(numPointsInBlocks, Sizeof.INT);
+
+
+        Pointer kernelParameters = Pointer.to(
+                Pointer.to(d_dataPointsArray),
+                Pointer.to(new int[]{DV.fieldLength}),
+                Pointer.to(new int[]{numPoints}),
+                Pointer.to(d_blockMins),
+                Pointer.to(d_blockMaxes),
+                Pointer.to(d_blockEdges),
+                Pointer.to(new int[]{hyper_blocks.size()}),
+                Pointer.to(d_dataPointBlocks),
+                Pointer.to(d_numPointsInBlocks)
+        );
+
+        //TODO: Implement me
+
+        int blockSize = Math.min(numPoints, 1024);
+        int gridSize = (int) Math.ceil((double) numPoints / blockSize);
+        // Launch the kernel
+        cuLaunchKernel(uselessBlockHelper,
+                gridSize, 1, 1,     // Grid size (in blocks)
+                blockSize, 1, 1,   // Block size (in threads)
+                0, null,                      // Shared memory size and stream
+                kernelParameters, null
+        );
+
+        cuCtxSynchronize();
+
+
+        // Read back in numPointsInBlocks
+        int byteC = numPointsInBlocks.length * Sizeof.INT;
+        cuMemcpyDtoH(Pointer.to(numPointsInBlocks), d_numPointsInBlocks, byteC);
+        cuMemFree(d_dataPointsArray);
+        cuMemFree(d_blockMins);
+        cuMemFree(d_blockEdges);
+        cuMemFree(d_blockMaxes);
+        cuMemFree(d_dataPointBlocks);
+        cuMemFree(d_numPointsInBlocks);
+
+        // Remove Blocks
+        for(int i = numPointsInBlocks.length - 1; i >= 0; i--){
+            if(numPointsInBlocks[i] == 0){
+                hyper_blocks.remove(i);
+            }
+        }
+
+        long endTime = System.currentTimeMillis();
+
+        long duration = endTime - startTime;
+
+        System.out.println("Time taken: " + duration + " ms");
+    }
     private void removeUselessAttributesCUDA(){
         // CUDA PLAN:
         // Keep two double arrays for mins and maxes for all blocks
@@ -592,20 +728,20 @@ public class HyperBlockGeneration
         CUfunction removeUselessHelper = new CUfunction();
         cuModuleGetFunction(removeUselessHelper, module1, "removeUselessHelper");
 
-        Double[][] fMinMaxResult = flatMinMaxNoEncode();
+        Float[][] fMinMaxResult = flatMinMaxNoEncode();
         //Double[][] fMinMaxResult = flattenMinsMaxesForCUDA();
-        Double[][] fDataResult = flattenDataset();
+        Float[][] fDataResult = flattenDataset();
 
 
         // Host variables
         float[] mins = new float[fMinMaxResult[0].length];
         for(int i = 0; i < fMinMaxResult[0].length; i++){
-            mins[i] = fMinMaxResult[0][i].floatValue();
+            mins[i] = fMinMaxResult[0][i];
         }
 
         float[] maxes = new float[fMinMaxResult[1].length];
         for(int i = 0; i < fMinMaxResult[1].length; i++){
-            maxes[i] = fMinMaxResult[1][i].floatValue();
+            maxes[i] = fMinMaxResult[1][i];
         }
 
         int minMaxLen = mins.length;
@@ -633,7 +769,7 @@ public class HyperBlockGeneration
         //TODO:
         float[] dataset = new float[fDataResult[0].length];
         for(int i = 0; i < fDataResult[0].length; i++){
-            dataset[i] = fDataResult[0][i].floatValue();
+            dataset[i] = fDataResult[0][i];
         }
 
         int numPoints = dataset.length / DV.fieldLength;
@@ -752,75 +888,80 @@ public class HyperBlockGeneration
      *  ex. [1, 1, 2, 1, 0]
      * Index 0 element says there is 1 min for the first attribute, then the index 2 element says there is 2 possible mins for the second attribute.
      */
-    private Double[][] flattenMinsMaxesForCUDA() {
+    private Float[][] flattenMinsMaxesForCUDA() {
 
-        ArrayList<Double> flatMinsList = new ArrayList<>();
-        ArrayList<Double> flatMaxesList = new ArrayList<>();
-        ArrayList<Double> blockEdges = new ArrayList<>();
-        Double[] blockClasses = new Double[hyper_blocks.size()];
+        ArrayList<Float> flatMinsList = new ArrayList<>();
+        ArrayList<Float> flatMaxesList = new ArrayList<>();
+        ArrayList<Float> blockEdges = new ArrayList<>();
+        Float[] blockClasses = new Float[hyper_blocks.size()];
 
         // First block starts at 0.
-        blockEdges.add(0.0);
+        blockEdges.add(0.0F);
 
         // go through and add all blocks mins and maxes list. along with adding in an int to tell how many numbers there are for that particular attribute
         for(int hb = 0; hb < hyper_blocks.size(); hb++) {
             HyperBlock block = hyper_blocks.get(hb);
-            blockClasses[hb] = (double) block.classNum;
+            blockClasses[hb] = (float) block.classNum;
 
             int blockLength = 0;
             // Go through each attribute of mins
             for (int m = 0; m < block.minimums.size(); m++) {
 
                 // Number of possible MIN/MAX ors for the attribute
-                double numIntervals = block.minimums.get(m).size();
+                float numIntervals = block.minimums.get(m).size();
 
                 // Add to block total size
                 blockLength += (int) numIntervals;
-                flatMinsList.add(numIntervals);
-                flatMinsList.addAll(block.minimums.get(m));
 
-                // DO FOR MAXES NOW!
+                flatMinsList.add(numIntervals);
                 flatMaxesList.add(numIntervals);
-                flatMaxesList.addAll(block.maximums.get(m));
+
+                for(int i = 0; i < block.minimums.get(m).size(); i++){
+                    flatMinsList.add(block.minimums.get(m).get(i).floatValue());
+                    flatMaxesList.add(block.maximums.get(m).get(i).floatValue());
+                }
+
             }
             // add this length to the last index, to tell where to find the next block
             blockEdges.add(blockLength + blockEdges.get(blockEdges.size() - 1) + DV.fieldLength);
         }
 
-        Double[] flatMinsArray = new Double[flatMinsList.size()];
-        Double[] flatMaxesArray = new Double[flatMaxesList.size()];
-        Double[] blockEdgesArray = new Double[blockEdges.size()];     // block edges array is going to have one more entry than necessary. the last block puts in it's ending index as well.
+        Float[] flatMinsArray = new Float[flatMinsList.size()];
+        Float[] flatMaxesArray = new Float[flatMaxesList.size()];
+        Float[] blockEdgesArray = new Float[blockEdges.size()];     // block edges array is going to have one more entry than necessary. the last block puts in it's ending index as well.
 
         flatMinsList.toArray(flatMinsArray);
         flatMaxesList.toArray(flatMaxesArray);
         blockEdges.toArray(blockEdgesArray);
 
         // Now return the arrays
-        return new Double[][] {flatMinsArray, flatMaxesArray, blockEdgesArray, blockClasses};
+        return new Float[][] {flatMinsArray, flatMaxesArray, blockEdgesArray, blockClasses};
     }
 
-    private Double[][] flatMinMaxNoEncode() {
+    //TODO: calculate how long the lists should be and move away from ArrayList<Double
+    private Float[][] flatMinMaxNoEncode() {
         int size = hyper_blocks.size();
-        ArrayList<Double> flatMinsList = new ArrayList<>();
-        ArrayList<Double> flatMaxesList = new ArrayList<>();
-        Double[] blockEdges = new Double[size + 1];
-        Double[] blockClasses = new Double[size];
-        Double[] intervalCounts = new Double[size * DV.fieldLength];
+
+        ArrayList<Float> flatMinsList = new ArrayList<>();
+        ArrayList<Float> flatMaxesList = new ArrayList<>();
+        Float[] blockEdges = new Float[size + 1];
+        Float[] blockClasses = new Float[size];
+        Float[] intervalCounts = new Float[size * DV.fieldLength];
 
         // First block starts at 0.
-        blockEdges[0] = 0.0;
+        blockEdges[0] = 0.0F;
         int idx = 0;
 
         // go through and add all blocks mins and maxes list. along with adding in an int to tell how many numbers there are for that particular attribute
         for(int hb = 0; hb < size; hb++) {
             HyperBlock block = hyper_blocks.get(hb);
-            blockClasses[hb] = (double) block.classNum;
+            blockClasses[hb] = (float) block.classNum;
             int length = 0;
             // Go through each attribute of mins
             for (int m = 0; m < block.minimums.size(); m++) {
 
                 // Number of possible MIN/MAX ors for the attribute
-                double numIntervals = block.minimums.get(m).size();
+                float numIntervals = block.minimums.get(m).size();
                 length += numIntervals;
                 // Add to block total size
                 //0 block 2 attribute
@@ -828,70 +969,43 @@ public class HyperBlockGeneration
                 idx++;
 
                 // Add all interval for current attribute.
-                flatMinsList.addAll(block.minimums.get(m));
-                flatMaxesList.addAll(block.maximums.get(m));
+                for(int i = 0; i < block.minimums.get(m).size(); i++){
+                    flatMinsList.add(block.minimums.get(m).get(i).floatValue());
+                    flatMaxesList.add(block.maximums.get(m).get(i).floatValue());
+                }
             }
             // add this length to the last index, to tell where to find the next block
             blockEdges[hb+1] = blockEdges[hb] + length;
         }
 
-        Double[] flatMinsArray = new Double[flatMinsList.size()];
-        Double[] flatMaxesArray = new Double[flatMaxesList.size()];
+        Float[] flatMinsArray = new Float[flatMinsList.size()];
+        Float[] flatMaxesArray = new Float[flatMaxesList.size()];
 
         flatMinsList.toArray(flatMinsArray);
         flatMaxesList.toArray(flatMaxesArray);
 
         // Now return the arrays
-        return new Double[][] {flatMinsArray, flatMaxesArray, blockEdges, blockClasses, intervalCounts};
+        return new Float[][] {flatMinsArray, flatMaxesArray, blockEdges, blockClasses, intervalCounts};
     }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    private Double[][] flattenDataset(){
-        ArrayList<Double> dataset = new ArrayList<>();
-        Double[] classBorder = new Double[DV.uniqueClasses.size() + 1];
-        classBorder[0] = 0.0;
+    private Float[][] flattenDataset(){
+        ArrayList<Float> dataset = new ArrayList<>();
+        Float[] classBorder = new Float[DV.uniqueClasses.size() + 1];
+        classBorder[0] = 0.0F;
 
         // add each point to the dataset list attribute by attribute
         for(int classN = 0; classN < data.size(); classN++) {
             // Exclusive end of class should be previous clas
-            classBorder[classN + 1] = (double) data.get(classN).data.length + classBorder[classN];
+            classBorder[classN + 1] = (float) data.get(classN).data.length + classBorder[classN];
             for(double[] point : data.get(classN).data)
                 for(double attribute : point)
-                    dataset.add(attribute);
+                    dataset.add((float)attribute);
         }
-
-        Double[] datasetArray = new Double[dataset.size()];
+        Float[] datasetArray = new Float[dataset.size()];
         dataset.toArray(datasetArray);
 
-        return new Double[][]{datasetArray, classBorder};
+        return new Float[][]{datasetArray, classBorder};
     }
 
         // removed represents one particular attribute which we want to try and remove
@@ -2256,6 +2370,7 @@ public class HyperBlockGeneration
                 "CUDA RUA",
                 "Create Disjunctive Blocks",
                 "Remove Useless Blocks",
+                "CUDA RUB",
                 "Expansion Algorithm" //Currently disabled until made interactive and ran by Dr. K
         });
         simplifications.addActionListener(e ->{
@@ -2264,6 +2379,7 @@ public class HyperBlockGeneration
             else if (selected.equals("CUDA RUA")) removeUselessAttributesCUDA();
             else if (selected.equals("Create Disjunctive Blocks")) simplifyHBtoDisjunctiveForm();
             else if (selected.equals("Remove Useless Blocks")) removeUselessBlocks();
+            else if (selected.equals("CUDA RUB")) removeUselessBlocksCuda();
             else if (selected.equals("Expansion Algorithm")){
                 expansionScroll.setVisible(true);
                 //attemptToExpandIntervals(.05, -1, false);
@@ -2434,8 +2550,15 @@ public class HyperBlockGeneration
         {
             case "PC" -> {
                 switch (selectedView) {
-                    case "Individual Hyperblocks" -> graphPanel.add(PC_HB(data, visualized_block));
-                    case "All Blocks" -> graphPanel.add(PC_HBs(data));
+                    case "Individual Hyperblocks" -> {
+                        System.out.println("Graphing only 1;");
+                        graphPanel.add(PC_HB(data, visualized_block));
+                    }
+
+                    case "All Blocks" -> {
+                        System.out.println("Graphing all;");
+                        graphPanel.add(PC_HBs(data));
+                    }
                     case "Class Combined Blocks" -> {
                         // Add your logic for class combined blocks here
                     }
@@ -2572,34 +2695,6 @@ public class HyperBlockGeneration
     }
 
     private void updateGraphs() {
-
-        /*
-
-        String selectedOption = (String) viewOptions.getSelectedItem();
-        switch (selectedOption) {
-            case "Individual Hyperblocks" -> {
-                // Equivalent to individualView.doClick();
-                individualViewAction();
-            }
-            case "All Blocks" -> {
-                // Equivalent to completeView.doClick();
-                completeViewAction();
-            }
-            case "Class Combined Blocks" -> {
-                // Equivalent to combinedClassView.doClick();
-                combinedClassViewAction();
-            }
-            default -> {
-                // Default case for Combined View
-                combinedViewAction();
-            }
-        }
-        */
-        // set left and right buttons
-        navPanel.removeAll();
-        navPanel.add(left);
-        navPanel.add(right);
-
         if (visualized_block > hyper_blocks.size() - 1)
             visualized_block = 0;
 
