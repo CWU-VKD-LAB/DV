@@ -20,6 +20,8 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicIntegerArray;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.IntStream;
+
 import jcuda.*;
 import jcuda.driver.*;
 
@@ -4494,15 +4496,11 @@ public class HyperBlockGeneration
             if (merging_hbs.isEmpty())
                 break;
 
-            int seedNum = -1;
-            for (int i = 0; i < merging_hbs.size(); i++)
-            {
-                if (merging_hbs.get(i).mergable)
-                {
-                    seedNum = i;
-                    break;
-                }
-            }
+            // Go through the merging_hbs aka hollowblocks, if the block is mergable, then the seed-num should point at this block.
+            int seedNum = IntStream.range(0, merging_hbs.size())
+                    .filter(i -> merging_hbs.get(i).mergable)
+                    .findFirst()
+                    .orElse(-1);
 
             if (seedNum == -1)
                 break;
@@ -4679,10 +4677,10 @@ public class HyperBlockGeneration
                 merging_hbs.add(seed_hb);
             }
 
-            //System.out.println("Cnt: " + cnt);
-            //System.out.println("HB num: " + merging_hbs.size());
-            //System.out.println("Seed HB Cls: " + seed_hb.classNum);
-            //System.out.println("Check time: " + executionTime + " milliseconds");
+            System.out.println("Cnt: " + cnt);
+            System.out.println("HB num: " + merging_hbs.size());
+            System.out.println("Seed HB Cls: " + seed_hb.classNum);
+            System.out.println("Check time: " + executionTime + " milliseconds");
 
             time_cnt++;
             total_time += executionTime;
