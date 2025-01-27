@@ -10,11 +10,11 @@ extern "C"
 __global__ void MergerHelper1(float *hyperBlockMins, float *hyperBlockMaxes, float *combinedMins, float *combinedMaxes, char *deleteFlags, int numAttributes, float *points, int numPoints, int numBlocks){
 
     // shared memory is going to be 2 * numAttributes * sizeof(float) long. this lets us load the whole seed block into memory
-    extern shared float seedBlock[];
+    extern shared float seedBlockAttributes[];
 
     // stored in the same array, but using two pointers we can make this easy.
-    float *seedBlockMins = &seedBlock[0];
-    float *seedBlockMaxes = &seedBlock[numAttributes];
+    float *seedBlockMins = &seedBlockAttributes[0];
+    float *seedBlockMaxes = &seedBlockAttributes[numAttributes];
 
     // get our thread id
     int threadID = blockIdx.x * blockDim.x + threadIdx.x;
@@ -49,7 +49,7 @@ __global__ void MergerHelper1(float *hyperBlockMins, float *hyperBlockMaxes, flo
             char allPassed = 1;
             for (int point = 0; point < numPoints; point++){
 
-                char someAttributeOutside = -1;
+                char someAttributeOutside = 0;
                 for(int att = 0; att < numAttributes; att++){
                     if (points[point * numAttributes + att] > thisBlockCombinedMaxes[att] || points[point * numAttributes + att] < thisBlockCombinedMins[att]){
                         someAttributeOutside = 1;
