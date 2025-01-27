@@ -34,15 +34,10 @@ __global__ void MergerHelper1(float *hyperBlockMins, float *hyperBlockMaxes, flo
         // sync when we're done copying over the seedblock values.
         __syncthreads();
 
-        // now we are ready to create our combined attributes and test if they work or not.
-        // if our threadID is the seedblock, we can just skip
-
         // we don't have to test blocks before the seedblock, since they've already been tested
         // also we aren't going to have a block if the threadID is too big.
-        if (threadID <= seedBlock || threadID >= numBlocks){}
-
         // make the combined mins and maxes, and then check against all our data.
-        else{
+        if (threadID > seedBlock && threadID < numBlocks){
 
             // first we build our combined list.
             for (int i = 0; i < numAttributes; i++){
@@ -67,7 +62,7 @@ __global__ void MergerHelper1(float *hyperBlockMins, float *hyperBlockMaxes, flo
                     break;
                 }
             }
-            // if we didn't pass, we simply do nothing. if we did pass all the points, that means we can merge, and we can set the updated mins and maxes for this point to be the combined attributes instead.
+            // if we did pass all the points, that means we can merge, and we can set the updated mins and maxes for this point to be the combined attributes instead.
             // then we simply flag that seedBlock is trash.
             if (allPassed){
                 // copy the combined mins and maxes into the original array
@@ -78,47 +73,7 @@ __global__ void MergerHelper1(float *hyperBlockMins, float *hyperBlockMaxes, flo
                 // set the flag to -1. atomic because many threads will try this.
                 atomicMin(&deleteFlags[seedBlock], -1);
             }
-            // sync threads to get ready at the end for the next iteration with the next seedBlock
-            __syncthreads();
         } // checking one seedblock loop
+        __syncthreads();
     }
 }
-
-/*
-__global__ void MergerHelper1(double *seedHBMax, double *seedHBMin, double *mergingHBMaxes, double *mergingHBMins, double *combinedMax, double *combinedMin, double *opClassPnts, int *deleteFlags, int numDims, int numMergingHBs, int cases)
-{
-    int n = blockIdx.x * blockDim.x + threadIdx.x;
-    if (n < numMergingHBs)
-    {
-        int offset = n * numDims; // gets your to the specific block we are working with
-        for (int i = 0; i < numDims; i++)
-        {
-            combinedMax[i+offset] = max(seedHBMax[i], mergingHBMaxes[i+offset]);
-            combinedMin[i+offset] = min(seedHBMin[i], mergingHBMins[i+offset]);
-        }
-
-        // 1 = do merge, 0 = do not merge
-        int merge = 1;
-        for (int i = 0; i < cases; i += numDims)
-        {
-            bool withinSpace = true;
-            for (int j = 0; j < numDims; j++)
-            {
-                if (!(opClassPnts[i+j] <= combinedMax[j+offset] && opClassPnts[i+j] >= combinedMin[j+offset]))
-                {
-                    withinSpace = false;
-                    break;
-                }
-            }
-
-            if (withinSpace)
-            {
-                merge = 0;
-                break;
-            }
-        }
-
-        deleteFlags[n] = merge;
-    }
-}
-*/
