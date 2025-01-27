@@ -1183,6 +1183,7 @@ public class HyperBlockGeneration
             if (merging_hbs.isEmpty())
                 break;
 
+            // seed HB will be the first one we see that is mergeable.
             int seedNum = -1;
             for (int i = 0; i < merging_hbs.size(); i++)
             {
@@ -1196,6 +1197,7 @@ public class HyperBlockGeneration
             if (seedNum == -1)
                 break;
 
+            // remove the seed HB. and store taht as seed.
             HollowBlock seed_hb = merging_hbs.get(seedNum);
             merging_hbs.remove(seedNum);
 
@@ -4025,6 +4027,14 @@ public class HyperBlockGeneration
     }
 
 
+    /*
+    * Refactor. Launch one kernel per class. with the blocks all in it, and all the OTHER classes points.
+    * load all the blocks in, try to merge to block 0, see what happens. if it works great, if not don't obviously.
+    * then use the next one as seed block. we can use shared memory for the seed block. to speed that up.
+    *
+    *
+    * */
+
 
     private void merger_cuda(ArrayList<ArrayList<double[]>> data, ArrayList<ArrayList<double[]>> out_data) throws ExecutionException, InterruptedException
     {
@@ -4044,7 +4054,7 @@ public class HyperBlockGeneration
         CUfunction mergerHelper1 = new CUfunction();
         cuModuleGetFunction(mergerHelper1, module1, "MergerHelper1");
 
-        // create hollow blocks from hyperblocks
+        // create hollow blocks from hyperblocks.
         ArrayList<HollowBlock> merging_hbs = new ArrayList<>();
         for (HyperBlock hyperBlock : hyper_blocks)
         {
@@ -4085,6 +4095,7 @@ public class HyperBlockGeneration
             if (merging_hbs.isEmpty())
                 break;
 
+            // our seed num is going to be the first block which we find that is mergeable.
             int seedNum = -1;
             for (int i = 0; i < merging_hbs.size(); i++)
             {
@@ -4095,18 +4106,15 @@ public class HyperBlockGeneration
                 }
             }
 
+            // if none are mergeable then we're done.
             if (seedNum == -1)
                 break;
+
 
             HollowBlock seed_hb = merging_hbs.get(seedNum);
             merging_hbs.remove(seedNum);
 
             long startTime = System.currentTimeMillis();
-
-
-            /***
-             * MAKE PARALLEL
-             */
 
             // Allocate device memory
             int numBlocks = merging_hbs.size();
@@ -4145,6 +4153,9 @@ public class HyperBlockGeneration
             CUdeviceptr toBeDeleted = new CUdeviceptr();
             cuMemAlloc(toBeDeleted, numBlock_intBytes);
 
+            // seed HB min and max is just ONE block.
+
+
             // Copy matrices A and B from host to device
             cuMemcpyHtoD(seedHBMax, Pointer.to(seed_hb.maximums), fieldLength_dblBytes);
             cuMemcpyHtoD(seedHBMin, Pointer.to(seed_hb.minimums), fieldLength_dblBytes);
@@ -4163,6 +4174,7 @@ public class HyperBlockGeneration
             cuMemcpyHtoD(mergingHBMaxes, Pointer.to(host_mergingHBMaxes), hb_fieldLength_dblBytes);
             cuMemcpyHtoD(mergingHBMins, Pointer.to(host_mergingHBMins), hb_fieldLength_dblBytes);
 
+            // make a giant list of all the points which do not belong to my particular class.
             double[] host_oppClassPnts = new double[numOpClassPnts * DV.fieldLength];
             for (int i = 0, k = 0; i < data.size(); i++)
             {
@@ -4248,6 +4260,8 @@ public class HyperBlockGeneration
                     double[] minPoint = new double[DV.fieldLength];
 
                     // define combined space
+
+                    // recompute the merged block intervals again?!
                     for (int j = 0; j < DV.fieldLength; j++)
                     {
                         maxPoint[j] = Math.max(seed_hb.maximums[j], merging_hbs.get(i).maximums[j]);
