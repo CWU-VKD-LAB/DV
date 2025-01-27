@@ -162,7 +162,7 @@ public class HyperBlock implements Serializable
                     for (int g = 0; g < maximums.get(k).size(); g++) {
 
                         // Check if the value is within the interval
-                        if (value >= minimums.get(k).get(g) && value <= maximums.get(k).get(g)) {
+                        if ((float) value >= minimums.get(k).get(g).floatValue() && (float) value <= maximums.get(k).get(g).floatValue()) {
                             inAnyInterval = true;
                             break;
                         }

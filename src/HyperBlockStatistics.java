@@ -1136,7 +1136,7 @@ public class HyperBlockStatistics {
             // Go through all intervals the hyperblock allows for the attribute
             for(int j = 0; j < tempBlock.maximums.get(i).size(); j++){
                 // If the datapoints value falls inside one of the intervals.
-                if (data[i] >= tempBlock.minimums.get(i).get(j) && data[i] <= tempBlock.maximums.get(i).get(j)) {
+                if ((float)data[i] >= tempBlock.minimums.get(i).get(j).floatValue() && (float) data[i] <= tempBlock.maximums.get(i).get(j).floatValue()) {
                     inAnInterval = true;
                     break;
                 }
