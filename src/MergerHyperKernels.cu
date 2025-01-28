@@ -3,6 +3,7 @@ extern "C"
 #define max(a, b) (a > b)? a: b
 #define min(a, b) (a > b)? b: a
 
+
 // our basic procedure is this. start with block 0 as a seed. try and merge all the other guys to block 0. if anyone does, then we can mark 0 for deletion.
 // iterate to the next one, merging the blocks to that one and so on.
 // we have only passed in countercases, not cases of our own class, all the blocks we are testing are also already the same class.

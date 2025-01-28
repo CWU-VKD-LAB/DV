@@ -205,6 +205,11 @@ public class HyperBlock implements Serializable
         // Go through all the points in the hyperblock
         for (double[] dbs : hyper_block.get(0))
         {
+            float[] testf = new float[dbs.length];
+            for(int i = 0; i < dbs.length; i++){
+                testf[i] = (float) dbs[i];
+            }
+
             for (int j = 0; j < DV.fieldLength; j++)
             {
                 // Update dimensional min or max if the value is < or >

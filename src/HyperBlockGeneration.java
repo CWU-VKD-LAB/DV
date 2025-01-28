@@ -1142,8 +1142,18 @@ public class HyperBlockGeneration
                     ArrayList<ArrayList<double[]>> hb_data = new ArrayList<>();
                     ArrayList<double[]> intv_data = new ArrayList<>();
 
-                    for (DataATTR dataATTR : intv)
-                        intv_data.add(data.get(dataATTR.cl).data[dataATTR.cl_index]);
+                    for (DataATTR dataATTR : intv) {
+                        // Get the double[] row from the 2D array
+                        double[] doubleRow = data.get(dataATTR.cl).data[dataATTR.cl_index];
+
+                        for (int i = 0; i < doubleRow.length; i++) {
+                            // Trim precision to, for example, 3 decimal places
+                            doubleRow[i] = (float) doubleRow[i];
+                        }
+
+                        // Add the precision-trimmed double[] to intv_data
+                        intv_data.add(doubleRow);
+                    }
 
                     // Add data and Hyperblock
                     hb_data.add(intv_data);
@@ -1157,7 +1167,6 @@ public class HyperBlockGeneration
 
             long endTime = System.currentTimeMillis();
             long executionTime = endTime - startTime;
-
             System.out.println("Parallelized Interval HB creation time: " + executionTime + " milliseconds");
 
             // add HBs and shutdown threads
@@ -1179,12 +1188,33 @@ public class HyperBlockGeneration
 
             for (ArrayList<Integer> skip : skips)
                 Collections.sort(skip);
+            /*
+            * for (DataATTR dataATTR : intv) {
+                        // Get the double[] row from the 2D array
+                        double[] doubleRow = data.get(dataATTR.cl).data[dataATTR.cl_index];
 
+                        for (int i = 0; i < doubleRow.length; i++) {
+                            // Trim precision to, for example, 3 decimal places
+                            doubleRow[i] = (float) doubleRow[i];
+                        }
+
+                        // Add the precision-trimmed double[] to intv_data
+                        intv_data.add(doubleRow);
+                    }
+            *
+            * */
             for (int i = 0; i < data.size(); i++) {
                 for (int j = 0; j < data.get(i).data.length; j++) {
                     if (!skips.get(i).isEmpty()) {
-                        if (j != skips.get(i).get(0))
-                            seed_data.get(i).add(data.get(i).data[j]);
+                        if (j != skips.get(i).get(0)){
+                            double[] doubleRow = data.get(i).data[j];
+
+                            for (int m = 0; m< doubleRow.length; m++) {
+                                doubleRow[m] = (float) doubleRow[m];
+                            }
+
+                            seed_data.get(i).add(doubleRow);
+                        }
                         else
                             skips.get(i).remove(0);
                     } else
@@ -1206,7 +1236,8 @@ public class HyperBlockGeneration
 
         // now if we made it through that, we can simply try the cuda version, if we get an exception for no cuda, then we use the not cuda version
         try {
-            merger_cuda(datum, seed_data);
+            //merger_cuda(datum, seed_data);
+            merger_cuda(seed_data, datum);
             order_hbs_by_class();
         }
         catch (InterruptedException | ExecutionException e) {
@@ -1539,7 +1570,7 @@ public class HyperBlockGeneration
         for (HyperBlock hb : existing_hb)
         {
             // if not unique, then return false
-            if (!(intv_max < hb.minimums.get(attr).get(0) || intv_min > hb.maximums.get(attr).get(0)))
+            if (!((float)intv_max < hb.minimums.get(attr).get(0).floatValue() || (float)intv_min > hb.maximums.get(attr).get(0).floatValue()))
             {
                 return false;
             }
@@ -4455,313 +4486,9 @@ public class HyperBlockGeneration
 
 
 
-    private void merger_cudaOld(ArrayList<ArrayList<double[]>> data, ArrayList<ArrayList<double[]>> out_data) throws ExecutionException, InterruptedException
-    {
-        // Initialize JCuda
-        JCudaDriver.setExceptionsEnabled(true);
-        cuInit(0);
-
-        // Create a context
-        CUdevice device = new CUdevice();
-        cuDeviceGet(device, 0);
-        CUcontext context = new CUcontext();
-        cuCtxCreate(context, 0, device);
-
-        // Load the kernel
-        CUmodule module1 = new CUmodule();
-        cuModuleLoad(module1, ".\\src\\MergerHyperKernels.ptx");
-        CUfunction mergerHelper1 = new CUfunction();
-        cuModuleGetFunction(mergerHelper1, module1, "MergerHelper1");
-
-        // create hollow blocks from hyperblocks
-        ArrayList<HollowBlock> merging_hbs = new ArrayList<>();
-        for (HyperBlock hyperBlock : hyper_blocks)
-        {
-            double[] mins = new double[DV.fieldLength];
-            double[] maxes = new double[DV.fieldLength];
-
-            for(int i = 0; i < hyperBlock.maximums.size(); i++){
-                mins[i] = hyperBlock.minimums.get(i).get(0);
-                maxes[i] = hyperBlock.maximums.get(i).get(0);
-            }
-
-            merging_hbs.add(new HollowBlock(Arrays.copyOf(maxes, maxes.length), Arrays.copyOf(mins, mins.length), hyperBlock.classNum));
-        }
-
-        hyper_blocks.clear();
-
-        // create seed hollow blocks
-        for (int i = 0; i < out_data.size(); i++)
-        {
-            for (int j = 0; j < out_data.get(i).size(); j++)
-                merging_hbs.add(new HollowBlock(out_data.get(i).get(j), out_data.get(i).get(j), i));
-        }
-
-        boolean actionTaken = false;
-        int cnt = merging_hbs.size();
-
-        int time_cnt = 0;
-        int total_time = 0;
-
-
-        do
-        {
-            if (actionTaken || cnt < 1)
-                cnt = merging_hbs.size();
-
-            actionTaken = false;
-
-            if (merging_hbs.isEmpty())
-                break;
-
-            // Go through the merging_hbs aka hollowblocks, if the block is mergable, then the seed-num should point at this block.
-            int seedNum = IntStream.range(0, merging_hbs.size())
-                    .filter(i -> merging_hbs.get(i).mergable)
-                    .findFirst()
-                    .orElse(-1);
-
-            if (seedNum == -1)
-                break;
-
-            HollowBlock seed_hb = merging_hbs.get(seedNum);
-            merging_hbs.remove(seedNum);
-
-            //long startTime = System.currentTimeMillis();
-
-
-            /***
-             * MAKE PARALLEL
-             */
-
-            // Allocate device memory
-            int numBlocks = merging_hbs.size();
-            int fieldLength_dblBytes = DV.fieldLength * Double.BYTES;
-            long hb_fieldLength_dblBytes = (long) numBlocks * fieldLength_dblBytes;
-
-            CUdeviceptr seedHBMax = new CUdeviceptr();
-            cuMemAlloc(seedHBMax, fieldLength_dblBytes);
-            CUdeviceptr seedHBMin = new CUdeviceptr();
-            cuMemAlloc(seedHBMin, fieldLength_dblBytes);
-
-            CUdeviceptr mergingHBMaxes = new CUdeviceptr();
-            cuMemAlloc(mergingHBMaxes, hb_fieldLength_dblBytes);
-            CUdeviceptr mergingHBMins = new CUdeviceptr();
-            cuMemAlloc(mergingHBMins, hb_fieldLength_dblBytes);
-
-            CUdeviceptr combinedMax = new CUdeviceptr();
-            cuMemAlloc(combinedMax, hb_fieldLength_dblBytes);
-            CUdeviceptr combinedMin = new CUdeviceptr();
-            cuMemAlloc(combinedMin, hb_fieldLength_dblBytes);
-
-            int numOpClassPnts = 0;
-            for (int i = 0; i < data.size(); i++)
-            {
-                if (seed_hb.classNum != i)
-                    numOpClassPnts += data.get(i).size();
-            }
-
-            int[] host_toBeDeleted = new int[numBlocks];
-
-            long numOpClassPnts_dblBytes = (long) numOpClassPnts * fieldLength_dblBytes;
-            long numBlock_intBytes = (long) numBlocks * Integer.BYTES;
-
-            CUdeviceptr oppClassPnts = new CUdeviceptr();
-            cuMemAlloc(oppClassPnts, numOpClassPnts_dblBytes);
-            CUdeviceptr toBeDeleted = new CUdeviceptr();
-            cuMemAlloc(toBeDeleted, numBlock_intBytes);
-
-            // Copy matrices A and B from host to device
-            cuMemcpyHtoD(seedHBMax, Pointer.to(seed_hb.maximums), fieldLength_dblBytes);
-            cuMemcpyHtoD(seedHBMin, Pointer.to(seed_hb.minimums), fieldLength_dblBytes);
-
-            double[] host_mergingHBMaxes = new double[numBlocks * DV.fieldLength];
-            double[] host_mergingHBMins = new double[numBlocks * DV.fieldLength];
-            for (int i = 0; i < numBlocks; i++)
-            {
-                for (int j = 0; j < DV.fieldLength; j++)
-                {
-                    host_mergingHBMaxes[i * DV.fieldLength + j] = merging_hbs.get(i).maximums[j];
-                    host_mergingHBMins[i * DV.fieldLength + j] = merging_hbs.get(i).minimums[j];
-                }
-            }
-
-            cuMemcpyHtoD(mergingHBMaxes, Pointer.to(host_mergingHBMaxes), hb_fieldLength_dblBytes);
-            cuMemcpyHtoD(mergingHBMins, Pointer.to(host_mergingHBMins), hb_fieldLength_dblBytes);
-
-            double[] host_oppClassPnts = new double[numOpClassPnts * DV.fieldLength];
-            for (int i = 0, k = 0; i < data.size(); i++)
-            {
-                if (seed_hb.classNum != i)
-                {
-                    for (int j = 0; j < data.get(i).size(); j++, k++)
-                        System.arraycopy(data.get(i).get(j), 0, host_oppClassPnts, k * DV.fieldLength, DV.fieldLength);
-                }
-            }
-
-            cuMemcpyHtoD(oppClassPnts, Pointer.to(host_oppClassPnts), numOpClassPnts_dblBytes);
-
-            // Set up kernel parameters: pointers to matrix A, matrices B, result matrices, dimensions, and numMatrices
-            Pointer kernelParameters = Pointer.to(
-                    Pointer.to(seedHBMax),
-                    Pointer.to(seedHBMin),
-                    Pointer.to(mergingHBMaxes),
-                    Pointer.to(mergingHBMins),
-                    Pointer.to(combinedMax),
-                    Pointer.to(combinedMin),
-                    Pointer.to(oppClassPnts),
-                    Pointer.to(toBeDeleted),
-                    Pointer.to(new int[]{DV.fieldLength}),
-                    Pointer.to(new int[]{numBlocks}),
-                    Pointer.to(new int[]{numOpClassPnts * DV.fieldLength})
-            );
-
-            // Configure the kernel execution parameters
-            int blockSize = 1024;  // Thread block size
-            int gridSize = merging_hbs.size() / blockSize + 1;
-
-            // Launch the kernel
-            cuLaunchKernel(mergerHelper1,
-                    gridSize, 1, 1,    // Grid size (in blocks)
-                    blockSize, 1, 1,  // Block size (in threads)
-                    0, null,                    // Shared memory size and stream
-                    kernelParameters, null      // Kernel parameters
-            );
-            cuCtxSynchronize();
-
-            // Copy result matrices C from device to host
-            cuMemcpyDtoH(Pointer.to(host_toBeDeleted), toBeDeleted, numBlock_intBytes);
-
-            // wait for results then check if any action was taken
-            for (int toDo : host_toBeDeleted)
-            {
-                if (toDo == 1)
-                {
-                    actionTaken = true;
-                    break;
-                }
-            }
-
-            // Clean up memory
-            cuMemFree(seedHBMax);
-            cuMemFree(seedHBMin);
-            cuMemFree(mergingHBMaxes);
-            cuMemFree(mergingHBMins);
-            cuMemFree(combinedMax);
-            cuMemFree(combinedMin);
-            cuMemFree(oppClassPnts);
-            cuMemFree(toBeDeleted);
-
-            /***
-             * MAKE PARALLEL
-             */
-
-
-
-            //long endTime = System.currentTimeMillis();
-            //long executionTime = endTime - startTime;
-
-
-
-            // delete hyperblocks in reverse
-            // and add successfully combined hyperblocks
-            ArrayList<HollowBlock> addHbs = new ArrayList<>();
-            for (int i = host_toBeDeleted.length - 1; i >= 0; i--)
-            {
-                if (host_toBeDeleted[i] == 1)
-                {
-                    double[] maxPoint = new double[DV.fieldLength];
-                    double[] minPoint = new double[DV.fieldLength];
-
-                    // define combined space
-                    for (int j = 0; j < DV.fieldLength; j++)
-                    {
-                        maxPoint[j] = Math.max(seed_hb.maximums[j], merging_hbs.get(i).maximums[j]);
-                        minPoint[j] = Math.min(seed_hb.minimums[j], merging_hbs.get(i).minimums[j]);
-                    }
-
-                    HollowBlock hb = new HollowBlock(maxPoint, minPoint, seed_hb.classNum);
-
-                    // remove old and add new
-                    merging_hbs.remove(i);
-                    addHbs.add(hb);
-                }
-            }
-
-            merging_hbs.addAll(addHbs);
-
-            if (!actionTaken)
-            {
-                seed_hb.mergable = false;
-                merging_hbs.add(seed_hb);
-            }
-
-            //System.out.println("Cnt: " + cnt);
-            //System.out.println("HB num: " + merging_hbs.size());
-            //System.out.println("Seed HB Cls: " + seed_hb.classNum);
-            //System.out.println("Check time: " + executionTime + " milliseconds");
-
-            //time_cnt++;
-            //total_time += executionTime;
-
-            cnt--;
-
-        } while (actionTaken || cnt > 0);
-
-
-        //System.out.println("Average time: " + total_time / time_cnt + " milliseconds");
-
-        //TODO:AUSTIN: MAKE SURE THIS IS A DEEP COPY
-        // Create hyperblocks from merging blocks
-        merging_hbs.parallelStream().forEach(mergingHb -> {
-            ArrayList<ArrayList<Double>> mins = new ArrayList<>();
-            ArrayList<ArrayList<Double>> maxes = new ArrayList<>();
-
-            for (int i = 0; i < mergingHb.minimums.length; i++) {
-                // Convert each minimum and maximum into an ArrayList<Double>
-                ArrayList<Double> minList = new ArrayList<>();
-                ArrayList<Double> maxList = new ArrayList<>();
-
-                minList.add(mergingHb.minimums[i]);
-                maxList.add(mergingHb.maximums[i]);
-
-                mins.add(minList);
-                maxes.add(maxList);
-            }
-
-            // Synchronize access to hyper_blocks since it is shared
-            synchronized (hyper_blocks) {
-                hyper_blocks.add(new HyperBlock(new ArrayList<>(maxes), new ArrayList<>(mins), mergingHb.classNum));
-            }
-        });
-        /*
-        for (HollowBlock mergingHb : merging_hbs) {
-            ArrayList<ArrayList<Double>> mins = new ArrayList<>();
-            ArrayList<ArrayList<Double>> maxes = new ArrayList<>();
-
-            for (int i = 0; i < mergingHb.minimums.length; i++) {
-                // Convert each minimum and maximum into an ArrayList<Double>
-                ArrayList<Double> minList = new ArrayList<>();
-                ArrayList<Double> maxList = new ArrayList<>();
-
-                minList.add(mergingHb.minimums[i]);
-                maxList.add(mergingHb.maximums[i]);
-
-                mins.add(minList);
-                maxes.add(maxList);
-            }
-
-            // Add them to the list of blocks
-            hyper_blocks.add(new HyperBlock(new ArrayList<>(maxes), new ArrayList<>(mins), mergingHb.classNum));
-        }
-        */
-        cuCtxDestroy(context);
-    }
-
-
     /////////////////////////////// Rework
     private void merger_cuda(ArrayList<ArrayList<double[]>> data, ArrayList<ArrayList<double[]>> out_data) throws ExecutionException, InterruptedException
     {
-
         // Initialize JCuda
         JCudaDriver.setExceptionsEnabled(true);
         cuInit(0);
@@ -4777,7 +4504,6 @@ public class HyperBlockGeneration
         cuModuleLoad(module1, ".\\src\\MergerHyperKernels.ptx");
         CUfunction mergerHelper1 = new CUfunction();
         cuModuleGetFunction(mergerHelper1, module1, "MergerHelper1");
-
 
         //(float *hyperBlockMins, float *hyperBlockMaxes, float *combinedMins, float *combinedMaxes, char *deleteFlags, int numAttributes, float *points, int numPoints, int numBlocks){
         // Make device pointers
@@ -4796,10 +4522,13 @@ public class HyperBlockGeneration
         ArrayList<CUdeviceptr> d_pointsALL = new ArrayList<>();
         ArrayList<CUstream> streams = new ArrayList<>();
 
-
         // Get how many points is in the dataset total.
         int numPoints = data.stream().mapToInt(ArrayList::size).sum();
 
+        int[] numBlocksOfEachClass = new int[DV.uniqueClasses.size()];
+        for(HyperBlock hb : hyper_blocks){
+            numBlocksOfEachClass[hb.classNum]++;
+        }
 
         // I want to go through and make the data that will be passed to each kernel.
         // Each class will hopefully be its own kernel through the use of streams.
@@ -4807,17 +4536,42 @@ public class HyperBlockGeneration
             // Total size of dp array
             int size = data.get(classN).size() * DV.fieldLength;
 
-            float[] hyperBlockMinsC = new float[size];
-            float[] hyperBlockMaxesC = new float[size];
-            float[] combinedMinsC = new float[size];
-            float[] combinedMaxesC = new float[size];
-            int[] deleteFlagsC = new int[size/DV.fieldLength];
-            float[] pointsC = new float[numPoints*DV.fieldLength - size];
+            int sizeWithAddedBlocks = size + (numBlocksOfEachClass[classN] * DV.fieldLength);
 
-            //TODO: Make whole thing into floats so this works fast and with just System.arraycopy
-            // Indices for inserting into arrays
+            // Will have existing blocks and rest of points of same class
+            float[] hyperBlockMinsC = new float[sizeWithAddedBlocks];
+            float[] hyperBlockMaxesC = new float[sizeWithAddedBlocks];
+            float[] combinedMinsC = new float[sizeWithAddedBlocks];
+            float[] combinedMaxesC = new float[sizeWithAddedBlocks];
+
+            System.out.println(sizeWithAddedBlocks);
+            // A flag for each block of this class
+            int[] deleteFlagsC = new int[numBlocksOfEachClass[classN] + (size / DV.fieldLength)];
+
+            // Will have flattened points from all other classes.
+            float[] pointsC = new float[numPoints * DV.fieldLength - size];
+
             int currentClassIndex = 0;
             int otherClassIndex = 0;
+
+            // add our pre made blocks to the list of blocks. After this we add all our points of this particular class, as their own blocks as well.
+            for(int hb = hyper_blocks.size() - 1; hb >= 0; hb--){
+                HyperBlock h = hyper_blocks.get(hb);
+
+                // if this block isn't the class we are working with just skip.
+                if(h.classNum != classN){
+                    continue;
+                }
+
+                // copy this block's intervals into the array of intervals.
+                for(int i = 0; i < h.minimums.size(); i++){
+                    hyperBlockMinsC[currentClassIndex] = h.minimums.get(i).get(0).floatValue();
+                    hyperBlockMaxesC[currentClassIndex] = h.maximums.get(i).get(0).floatValue();
+                    currentClassIndex++;
+                }
+                // remove this block from the list.
+                hyper_blocks.remove(hb);
+            }
 
             // Iterate through all classes
             for (int currentClass = 0; currentClass < data.size(); currentClass++) {
@@ -4839,6 +4593,8 @@ public class HyperBlockGeneration
                 }
             }
 
+            System.out.println("Current class index" + currentClassIndex);
+
             hyperBlockMins.add(hyperBlockMinsC);
             hyperBlockMaxes.add(hyperBlockMaxesC);
             combinedMins.add(combinedMinsC);
@@ -4846,18 +4602,20 @@ public class HyperBlockGeneration
             deleteFlags.add(deleteFlagsC);
             points.add(pointsC);
 
+            // Fill up arraylist of device pointers.
             hyperBlockMinsALL.add(CudaUtil.allocateAndCopy(hyperBlockMinsC, Sizeof.FLOAT));
             hyperBlockMaxesALL.add(CudaUtil.allocateAndCopy(hyperBlockMaxesC, Sizeof.FLOAT));
             combinedMinsALL.add(CudaUtil.allocateAndCopy(combinedMinsC, Sizeof.FLOAT));
             combinedMaxesALL.add(CudaUtil.allocateAndCopy(combinedMaxesC, Sizeof.FLOAT));
             deleteFlagsALL.add(CudaUtil.allocateAndCopy(deleteFlagsC, Sizeof.INT));
             d_pointsALL.add(CudaUtil.allocateAndCopy(pointsC, Sizeof.FLOAT));
-            CUstream stream = new CUstream();
+
+            CUstream stream = new CUstream(); // Make a stream for each class
             cuStreamCreate(stream, CUstream_flags.CU_STREAM_DEFAULT);
             streams.add(stream);
         }
 
-
+        // Launch a kernel for each class.
         for (int classN = 0; classN < DV.uniqueClasses.size(); classN++) {
             System.out.println("launching my kern");
             CUstream stream = streams.get(classN);
@@ -4869,8 +4627,8 @@ public class HyperBlockGeneration
 
             CUdeviceptr d_points = d_pointsALL.get(classN);
 
-            // int numAttributes, float *points, int numPoints, int numBlocks){
-            int classPointsNum = points.get(classN).length / DV.fieldLength;
+            // Set up kernel parameters
+            int otherCPointsNum = points.get(classN).length / DV.fieldLength;
             Pointer kernelParams = Pointer.to(
                 Pointer.to(d_hyperBlockMins),
                 Pointer.to(d_hyperBlockMaxes),
@@ -4879,14 +4637,13 @@ public class HyperBlockGeneration
                 Pointer.to(d_deleteFlags),
                 Pointer.to(new int[]{DV.fieldLength}),
                 Pointer.to(d_points),
-                Pointer.to(new int[]{classPointsNum}),
-                Pointer.to(new int[]{numPoints - classPointsNum})
-
+                Pointer.to(new int[]{otherCPointsNum}),
+                Pointer.to(new int[]{numPoints - otherCPointsNum + numBlocksOfEachClass[classN]})
             );
 
 
-            int blockSize = 1024;
-            int gridSize = (classPointsNum + blockSize - 1) / blockSize;
+            int blockSize = 1024; // number of threads
+            int gridSize = (otherCPointsNum +  blockSize - 1) / blockSize;
             int sharedMem = 2 * DV.fieldLength * Sizeof.FLOAT;
             cuLaunchKernel(mergerHelper1,
                     gridSize, 1, 1,
@@ -4901,50 +4658,6 @@ public class HyperBlockGeneration
         for (CUstream stream : streams) cuStreamSynchronize(stream);
         cuCtxSynchronize();
 
-        System.out.println("----- Starting Debug Prints -----");
-        System.out.println("Number of unique classes: " + DV.uniqueClasses.size());
-        System.out.println("Total points in dataset: " + numPoints);
-        /*
-        for (int classN = 0; classN < DV.uniqueClasses.size(); classN++) {
-            String className = DV.uniqueClasses.get(classN);
-
-            // Print class information
-            System.out.printf("Class %s (Index %d):\n", className, classN);
-
-            // Print lengths of arrays for the current class
-            System.out.println(" - hyperBlockMinsC length: " + hyperBlockMins.get(classN).length);
-            System.out.println(" - hyperBlockMaxesC length: " + hyperBlockMaxes.get(classN).length);
-            System.out.println(" - combinedMinsC length: " + combinedMins.get(classN).length);
-            System.out.println(" - combinedMaxesC length: " + combinedMaxes.get(classN).length);
-            System.out.println(" - deleteFlagsC length: " + deleteFlags.get(classN).length);
-            System.out.println(" - pointsC length: " + points.get(classN).length);
-
-            // Print lengths of CUdeviceptr ArrayLists (these hold device pointers)
-            System.out.println(" - hyperBlockMinsALL device pointer exists: " + (hyperBlockMinsALL.get(classN) != null));
-            System.out.println(" - hyperBlockMaxesALL device pointer exists: " + (hyperBlockMaxesALL.get(classN) != null));
-            System.out.println(" - combinedMinsALL device pointer exists: " + (combinedMinsALL.get(classN) != null));
-            System.out.println(" - combinedMaxesALL device pointer exists: " + (combinedMaxesALL.get(classN) != null));
-            System.out.println(" - deleteFlagsALL device pointer exists: " + (deleteFlagsALL.get(classN) != null));
-            System.out.println(" - d_pointsALL device pointer exists: " + (d_pointsALL.get(classN) != null));
-
-            // Print stream creation status
-            System.out.println(" - Stream created: " + (streams.get(classN) != null));
-
-            // Optionally print the first few elements of each array to verify contents
-            System.out.println(" - First few elements of hyperBlockMinsC: " + Arrays.toString(Arrays.copyOf(hyperBlockMins.get(classN), Math.min(10, hyperBlockMins.get(classN).length))));
-            System.out.println(" - First few elements of hyperBlockMaxesC: " + Arrays.toString(Arrays.copyOf(hyperBlockMaxes.get(classN), Math.min(10, hyperBlockMaxes.get(classN).length))));
-            System.out.println(" - First few elements of combinedMinsC: " + Arrays.toString(Arrays.copyOf(combinedMins.get(classN), Math.min(10, combinedMins.get(classN).length))));
-            System.out.println(" - First few elements of combinedMaxesC: " + Arrays.toString(Arrays.copyOf(combinedMaxes.get(classN), Math.min(10, combinedMaxes.get(classN).length))));
-            System.out.println(" - First few elements of deleteFlagsC: " + Arrays.toString(Arrays.copyOf(deleteFlags.get(classN), Math.min(10, deleteFlags.get(classN).length))));
-            System.out.println(" - First few elements of pointsC: " + Arrays.toString(Arrays.copyOf(points.get(classN), Math.min(10, points.get(classN).length))));
-
-            System.out.println("\n\n\n");
-
-
-        }
-        System.out.println("----- Debug Prints Complete -----");
-        */
-
 
         for (int classN = 0; classN < DV.uniqueClasses.size(); classN++) {
             float[] resultMins = new float[hyperBlockMins.get(classN).length];
@@ -4954,20 +4667,6 @@ public class HyperBlockGeneration
             cuMemcpyDtoH(Pointer.to(resultMins), hyperBlockMinsALL.get(classN), (long) resultMins.length * Sizeof.FLOAT);
             cuMemcpyDtoH(Pointer.to(resultMaxes), hyperBlockMaxesALL.get(classN), (long) resultMaxes.length * Sizeof.FLOAT);
             cuMemcpyDtoH(Pointer.to(deleteFlag), deleteFlagsALL.get(classN), (long) deleteFlag.length * Sizeof.INT);
-
-            /*
-            System.out.println("Mins size" + resultMins.length);
-            System.out.println("Mins:" + Arrays.toString(resultMins));
-
-            System.out.println("Maxes size" + resultMaxes.length);
-            System.out.println("Maxes:" + Arrays.toString(resultMins));
-
-            System.out.println("Delete flags len: " + deleteFlag.length);
-            System.out.println("Delete Flags:" + Arrays.toString(deleteFlag));
-
-            System.out.println("Class: " + DV.uniqueClasses.get(classN));
-            System.out.println();
-            */
 
             // Go through the results and make a new block every DV.FieldLen
             for(int i = 0; i < resultMins.length; i += DV.fieldLength){
@@ -4992,15 +4691,9 @@ public class HyperBlockGeneration
                         System.out.println(i+j);
                     }
                 }
-
-                System.out.println("Block:");
-                System.out.println(blockMins);
-                System.out.println(blockMaxes);
-                System.out.println();
                 hyper_blocks.add(new HyperBlock(blockMaxes, blockMins, classN));
             }
         }
-
         for (CUdeviceptr ptr : hyperBlockMinsALL) cuMemFree(ptr);
         for (CUdeviceptr ptr : hyperBlockMaxesALL) cuMemFree(ptr);
         for (CUdeviceptr ptr : combinedMinsALL) cuMemFree(ptr);
@@ -5009,7 +4702,6 @@ public class HyperBlockGeneration
         for (CUdeviceptr ptr : d_pointsALL) cuMemFree(ptr);
         for (CUstream stream : streams) cuStreamDestroy(stream);
         cuCtxDestroy(context);
-
     }
 
 

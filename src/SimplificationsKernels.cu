@@ -36,7 +36,7 @@ __global__ void removeUselessHelper(float* mins, float* maxes, int* intervalCoun
         }
 
         bool someOneInBounds = false;
-        // Check all peeeeeoints from other classes
+        // Check all peoints from other classes
         for(int j = 0; j < numPoints * fieldLen; j += fieldLen) {
             if(j < endClass && j >= startClass) continue;
 
