@@ -11,6 +11,7 @@ __global__ void MergerHelper1(float *hyperBlockMins, float *hyperBlockMaxes, flo
 
     // shared memory is going to be 2 * numAttributes * sizeof(float) long. this lets us load the whole seed block into memory
     extern shared float seedBlock[];
+    __shared__ int mergesHappened;
 
     // stored in the same array, but using two pointers we can make this easy.
     float *seedBlockMins = &seedBlock[0];
@@ -22,66 +23,77 @@ __global__ void MergerHelper1(float *hyperBlockMins, float *hyperBlockMaxes, flo
     float *thisBlockCombinedMins = &combinedMins[threadID * numAttributes];
     float *thisBlockCombinedMaxes = &combinedMaxes[threadID * numAttributes];
 
-    for(int seedBlock = 0; seedBlock < numBlocks; seedBlock++){
+    do {
 
-        // copy the seed blocks attributes into shared memory, so that we can load stuff much faster.
-        // block Dim is how many threads in a block. since each block has it's own shared memory, this is our offset for copying stuff over. this is needed because
-        // we could have more than 1024 attributes very easily.
-        for (int index = threadIdx.x; index < numAttributes; index += blockDim.x){
-            seedBlockMins[index] = hyperBlockMins[seedBlock * numAttributes + index];
-            seedBlockMaxes[index] = hyperBlockMaxes[seedBlock * numAttributes + index];
-        }
-        // sync when we're done copying over the seedblock values.
-        __syncthreads();
+        // only thread 0 gets to set this flag back to 0, otherwise we are wasting time.
+        if (threadID == 0)
+            mergesHappened = 0;
 
-        // now we are ready to create our combined attributes and test if they work or not.
-        // if our threadID is the seedblock, we can just skip
+        for(int seedBlock = 0; seedBlock < numBlocks; seedBlock++){
 
-        // we don't have to test blocks before the seedblock, since they've already been tested
-        // also we aren't going to have a block if the threadID is too big.
-        if (threadID <= seedBlock || threadID >= numBlocks){}
+            // if we've already flagged this guy to delete, we can just skip.
+            if (deleteFlags[seedBlock] == -1)
+                continue;
 
-        // make the combined mins and maxes, and then check against all our data.
-        else{
-
-            // first we build our combined list.
-            for (int i = 0; i < numAttributes; i++){
-                thisBlockCombinedMaxes[i] = max(seedBlockMaxes[i], hyperBlockMaxes[threadID * numAttributes + i]);
-                thisBlockCombinedMins[i] = min(seedBlockMins[i], hyperBlockMins[threadID * numAttributes + i]);
+            // copy the seed blocks attributes into shared memory, so that we can load stuff much faster.
+            // block Dim is how many threads in a block. since each block has it's own shared memory, this is our offset for copying stuff over. this is needed because
+            // we could have more than 1024 attributes very easily.
+            for (int index = threadIdx.x; index < numAttributes; index += blockDim.x){
+                seedBlockMins[index] = hyperBlockMins[seedBlock * numAttributes + index];
+                seedBlockMaxes[index] = hyperBlockMaxes[seedBlock * numAttributes + index];
             }
 
-            // now we check all our data for a point falling into our new bounds.
-            char allPassed = 1;
-            for (int point = 0; point < numPoints; point++){
+            // sync when we're done copying over the seedblock values.
+            __syncthreads();
 
-                char someAttributeOutside = -1;
-                for(int att = 0; att < numAttributes; att++){
-                    if (points[point * numAttributes + att] > thisBlockCombinedMaxes[att] || points[point * numAttributes + att] < thisBlockCombinedMins[att]){
-                        someAttributeOutside = 1;
+            // now we are ready to create our combined attributes and test if they work or not.
+            // if our threadID is the seedblock, we can just skip
+            // we don't have to test blocks before the seedblock, since they've already been tested
+            // also we aren't going to have a block if the threadID is too big.
+            // make the combined mins and maxes, and then check against all our data.
+            if (threadID > seedBlock && threadID < numBlocks && deleteFlags[threadID] != -1){
+
+                // first we build our combined list.
+                for (int i = 0; i < numAttributes; i++){
+                    thisBlockCombinedMaxes[i] = max(seedBlockMaxes[i], hyperBlockMaxes[threadID * numAttributes + i]);
+                    thisBlockCombinedMins[i] = min(seedBlockMins[i], hyperBlockMins[threadID * numAttributes + i]);
+                }
+
+                // now we check all our data for a point falling into our new bounds.
+                char allPassed = 1;
+                for (int point = 0; point < numPoints; point++){
+
+                    char someAttributeOutside = 0;
+                    for(int att = 0; att < numAttributes; att++){
+                        if (points[point * numAttributes + att] > thisBlockCombinedMaxes[att] || points[point * numAttributes + att] < thisBlockCombinedMins[att]){
+                            someAttributeOutside = 1;
+                            break;
+                        }
+                    }
+                    // if there's NOT some attribute outside, this point has fallen in, and we can't do the merge.
+                    if (!someAttributeOutside){
+                        allPassed = 0;
                         break;
                     }
                 }
-                // if there's NOT some attribute outside, this point has fallen in, and we can't do the merge.
-                if (!someAttributeOutside){
-                    allPassed = -1;
-                    break;
+
+                // if we didn't pass, we simply do nothing. if we did pass all the points, that means we can merge, and we can set the updated mins and maxes for this point to be the combined attributes instead.
+                // then we simply flag that seedBlock is trash, and that merges have happened
+                if (allPassed){
+                    // copy the combined mins and maxes into the original array
+                    for (int i = 0; i < numAttributes; i++){
+                        hyperBlockMins[threadID * numAttributes + i] = thisBlockCombinedMins[i];
+                        hyperBlockMaxes[threadID * numAttributes + i] = thisBlockCombinedMaxes[i];
+                    }
+                    // set the flag to -1. atomic because many threads will try this.
+                    atomicMin(&deleteFlags[seedBlock], -1);
+                    atomicMax(&mergesHappened, 1);
                 }
-            }
-            // if we didn't pass, we simply do nothing. if we did pass all the points, that means we can merge, and we can set the updated mins and maxes for this point to be the combined attributes instead.
-            // then we simply flag that seedBlock is trash.
-            if (allPassed){
-                // copy the combined mins and maxes into the original array
-                for (int i = 0; i < numAttributes; i++){
-                    hyperBlockMins[threadID * numAttributes + i] = thisBlockCombinedMins[threadID * numAttributes + i];
-                    hyperBlockMaxes[threadID * numAttributes + i] = thisBlockCombinedMaxes[threadID * numAttributes + i];
-                }
-                // set the flag to -1. atomic because many threads will try this.
-                atomicMin(&deleteFlags[seedBlock], -1);
-            }
-            // sync threads to get ready at the end for the next iteration with the next seedBlock
+                // sync threads to get ready at the end for the next iteration with the next seedBlock
+            } // checking one seedblock loop
             __syncthreads();
-        } // checking one seedblock loop
-    }
+        }// end of checking all seedblocks
+    } while (mergesHappened)// merges happened loop
 }
 
 /*
