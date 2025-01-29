@@ -126,7 +126,7 @@ public class HyperBlockGeneration
 
         }else{
             long startTime = System.currentTimeMillis();
-            generateHBs(false);
+            generateHBs(true);
             long endTime = System.currentTimeMillis();
             long duration = endTime - startTime;
             System.out.println("Generate Hbs: " + duration + " ms");
@@ -4524,7 +4524,10 @@ public class HyperBlockGeneration
 
         // Get how many points is in the dataset total.
         int numPoints = data.stream().mapToInt(ArrayList::size).sum();
+        int nPointsNotInHBs = out_data.stream().mapToInt(ArrayList::size).sum();
 
+        System.out.println(numPoints);
+        System.out.println("npoints" + nPointsNotInHBs);
         int[] numBlocksOfEachClass = new int[DV.uniqueClasses.size()];
         for(HyperBlock hb : hyper_blocks){
             numBlocksOfEachClass[hb.classNum]++;
@@ -4548,12 +4551,46 @@ public class HyperBlockGeneration
             // A flag for each block of this class
             int[] deleteFlagsC = new int[numBlocksOfEachClass[classN] + (size / DV.fieldLength)];
 
+            int nSize = out_data.get(classN).size();
             // Will have flattened points from all other classes.
-            float[] pointsC = new float[numPoints * DV.fieldLength - size];
+            float[] pointsC = new float[DV.fieldLength * (nPointsNotInHBs - nSize)];
 
             int currentClassIndex = 0;
-            int otherClassIndex = 0;
 
+
+            // Iterate through all classes
+            // Build the mins/maxes with the points that ARENT in the blocks for this class already.
+            for (int currentClass = 0; currentClass < data.size(); currentClass++) {
+                for (double[] point : data.get(currentClass)) {
+                    if (currentClass == classN) {
+                        // Add points to hyperBlockMinsC and hyperBlockMaxesC for the current class
+                        for (double val : point) {
+                            hyperBlockMinsC[currentClassIndex] = (float) val;
+                            hyperBlockMaxesC[currentClassIndex] = (float) val;
+                            currentClassIndex++;
+                        }
+                    }
+                }
+            }
+
+            int otherClassIndex = 0;
+            // Points from other classes should INCLUDE the points that were in other classes blocks
+            // since we are using to check purity.
+            for (int currentClass = 0; currentClass < data.size(); currentClass++) {
+                if(currentClass == classN){
+                    continue;
+                }
+
+                for (double[] point : out_data.get(currentClass)) {
+                    // Add points to hyperBlockMinsC and hyperBlockMaxesC for the current class
+                    // Add points to pointsC for other classes
+                    for (double val : point) {
+                        pointsC[otherClassIndex] = (float) val;
+                        //System.out.println("index: " + otherClassIndex);
+                        otherClassIndex++;
+                    }
+                }
+            }
             // add our pre made blocks to the list of blocks. After this we add all our points of this particular class, as their own blocks as well.
             for(int hb = hyper_blocks.size() - 1; hb >= 0; hb--){
                 HyperBlock h = hyper_blocks.get(hb);
@@ -4572,27 +4609,6 @@ public class HyperBlockGeneration
                 // remove this block from the list.
                 hyper_blocks.remove(hb);
             }
-
-            // Iterate through all classes
-            for (int currentClass = 0; currentClass < data.size(); currentClass++) {
-                for (double[] point : data.get(currentClass)) {
-                    if (currentClass == classN) {
-                        // Add points to hyperBlockMinsC and hyperBlockMaxesC for the current class
-                        for (double val : point) {
-                            hyperBlockMinsC[currentClassIndex] = (float) val;
-                            hyperBlockMaxesC[currentClassIndex] = (float) val;
-                            currentClassIndex++;
-                        }
-                    } else {
-                        // Add points to pointsC for other classes
-                        for (double val : point) {
-                            pointsC[otherClassIndex] = (float) val;
-                            otherClassIndex++;
-                        }
-                    }
-                }
-            }
-
             System.out.println("Current class index" + currentClassIndex);
 
             hyperBlockMins.add(hyperBlockMinsC);
@@ -4615,6 +4631,9 @@ public class HyperBlockGeneration
             streams.add(stream);
         }
 
+
+
+
         // Launch a kernel for each class.
         for (int classN = 0; classN < DV.uniqueClasses.size(); classN++) {
             System.out.println("launching my kern");
@@ -4627,8 +4646,16 @@ public class HyperBlockGeneration
 
             CUdeviceptr d_points = d_pointsALL.get(classN);
 
-            // Set up kernel parameters
             int otherCPointsNum = points.get(classN).length / DV.fieldLength;
+            int numBlocks = hyperBlockMins.get(classN).length / DV.fieldLength;
+            int[] seedQueue = new int[numBlocks];
+            for (int i = 0; i < numBlocks; i++) {
+                seedQueue[i] = i;
+            }
+
+            CUdeviceptr d_seedQueue = CudaUtil.allocateAndCopy(seedQueue, Sizeof.INT);
+
+            // Set up kernel parameters
             Pointer kernelParams = Pointer.to(
                 Pointer.to(d_hyperBlockMins),
                 Pointer.to(d_hyperBlockMaxes),
@@ -4638,7 +4665,8 @@ public class HyperBlockGeneration
                 Pointer.to(new int[]{DV.fieldLength}),
                 Pointer.to(d_points),
                 Pointer.to(new int[]{otherCPointsNum}),
-                Pointer.to(new int[]{numPoints - otherCPointsNum + numBlocksOfEachClass[classN]})
+                Pointer.to(new int[]{numBlocks}),
+                Pointer.to(d_seedQueue)
             );
 
 
@@ -4667,13 +4695,13 @@ public class HyperBlockGeneration
             cuMemcpyDtoH(Pointer.to(resultMins), hyperBlockMinsALL.get(classN), (long) resultMins.length * Sizeof.FLOAT);
             cuMemcpyDtoH(Pointer.to(resultMaxes), hyperBlockMaxesALL.get(classN), (long) resultMaxes.length * Sizeof.FLOAT);
             cuMemcpyDtoH(Pointer.to(deleteFlag), deleteFlagsALL.get(classN), (long) deleteFlag.length * Sizeof.INT);
+            System.out.println("Delete Flags" + Arrays.toString(deleteFlag));
 
             // Go through the results and make a new block every DV.FieldLen
             for(int i = 0; i < resultMins.length; i += DV.fieldLength){
                 if(deleteFlag[i / DV.fieldLength] == -1){
                     continue;
                 }
-
                 ArrayList<ArrayList<Double>> blockMins = new ArrayList<>();
                 ArrayList<ArrayList<Double>> blockMaxes = new ArrayList<>();
 
@@ -4687,9 +4715,6 @@ public class HyperBlockGeneration
                     blockMins.add(innerMin);
                     blockMaxes.add(innerMax);
 
-                    if(classN == 0){
-                        System.out.println(i+j);
-                    }
                 }
                 hyper_blocks.add(new HyperBlock(blockMaxes, blockMins, classN));
             }

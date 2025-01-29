@@ -3,12 +3,11 @@ extern "C"
 #define max(a, b) (a > b)? a: b
 #define min(a, b) (a > b)? b: a
 
-
 // our basic procedure is this. start with block 0 as a seed. try and merge all the other guys to block 0. if anyone does, then we can mark 0 for deletion.
 // iterate to the next one, merging the blocks to that one and so on.
 // we have only passed in countercases, not cases of our own class, all the blocks we are testing are also already the same class.
 // may need some changing around, when we test with a dataset over 2000 ish attributes we can't use shared memory to store the seedblock attributes, so we just will use global if such a thing happens.
-__global__ void MergerHelper1(float *hyperBlockMins, float *hyperBlockMaxes, float *combinedMins, float *combinedMaxes, int *deleteFlags, int numAttributes, float *points, int numPoints, int numBlocks){
+__global__ void MergerHelper1(float *hyperBlockMins, float *hyperBlockMaxes, float *combinedMins, float *combinedMaxes, int *deleteFlags, int numAttributes, float *points, int numPoints, int numBlocks, int* seedQueue){
 
     // shared memory is going to be 2 * numAttributes * sizeof(float) long. this lets us load the whole seed block into memory
     extern __shared__ float seedBlockAttributes[];
@@ -23,7 +22,11 @@ __global__ void MergerHelper1(float *hyperBlockMins, float *hyperBlockMaxes, flo
     float *thisBlockCombinedMins = &combinedMins[threadID * numAttributes];
     float *thisBlockCombinedMaxes = &combinedMaxes[threadID * numAttributes];
 
-    for(int seedBlock = 0; seedBlock < numBlocks; seedBlock++){
+    int positionInSeedQueue = threadID;
+    for(int deadSeedNum = 0; deadSeedNum < numBlocks; deadSeedNum++){
+
+        // This is the thing with accessing the right block from the queue.
+        int seedBlock = seedQueue[deadSeedNum];
 
         // copy the seed blocks attributes into shared memory, so that we can load stuff much faster.
         // block Dim is how many threads in a block. since each block has it's own shared memory, this is our offset for copying stuff over. this is needed because
@@ -38,7 +41,7 @@ __global__ void MergerHelper1(float *hyperBlockMins, float *hyperBlockMaxes, flo
         // we don't have to test blocks before the seedblock, since they've already been tested
         // also we aren't going to have a block if the threadID is too big.
         // make the combined mins and maxes, and then check against all our data.
-        if (threadID > seedBlock && threadID < numBlocks){
+        if (threadID != seedBlock && threadID < numBlocks && deleteFlags[threadID] >= 0 ){
 
             // first we build our combined list.
             for (int i = 0; i < numAttributes; i++){
@@ -76,26 +79,46 @@ __global__ void MergerHelper1(float *hyperBlockMins, float *hyperBlockMaxes, flo
             }
         } // checking one seedblock loop
         __syncthreads();
+
+
+        if(threadID == 0 && deleteFlags[seedBlock] != -1){
+            deleteFlags[seedBlock] = -9;
+        }
+
+        // Redo the order of the non-existent queue seedQueue
+        if(threadID < numBlocks && positionInSeedQueue > deadSeedNum){
+            int cnt = 0;
+            if(deleteFlags[threadID] == 1){
+                // count all 1's to the right of self, then put self in numBlocks - 1 - count
+                for(int i = positionInSeedQueue + 1; i < numBlocks; i++){
+                    if(deleteFlags[seedQueue[i]] == 1){
+                        cnt++;
+                    }
+                }
+                positionInSeedQueue = numBlocks - 1 - cnt;
+            }
+            else if(deleteFlags[threadID] == 0){
+               // count all non-1's to the left, then put self in deadSeedNum + count
+               for(int i = positionInSeedQueue - 1; i > deadSeedNum; i--){
+                    if(deleteFlags[seedQueue[i]] == 0){
+                        cnt++;
+                    }
+               }
+               positionInSeedQueue = deadSeedNum + cnt + 1;
+            }
+
+            // Move the block number to the right spot in the queue.
+            seedQueue[positionInSeedQueue] = threadID;
+        }
+
+        __syncthreads();
+        //RESET THE DELETE FLAGS ALL 1 -> 0, LEAVE -1 and -9 ALONE
+        if(threadID < numBlocks && deleteFlags[threadID] == 1){
+            deleteFlags[threadID] = 0;
+        }
+
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -190,10 +213,6 @@ __global__ void MergerHelper1(double *seedHBMax, double *seedHBMin, double *merg
     int threadID = blockIdx.x * blockDim.x + threadIdx.x;
 
     do{
-
-
-
-
         if (threadID < numMergingHBs)
         {
             int offset = threadID * numDims;
