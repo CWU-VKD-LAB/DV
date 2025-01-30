@@ -1142,18 +1142,8 @@ public class HyperBlockGeneration
                     ArrayList<ArrayList<double[]>> hb_data = new ArrayList<>();
                     ArrayList<double[]> intv_data = new ArrayList<>();
 
-                    for (DataATTR dataATTR : intv) {
-                        // Get the double[] row from the 2D array
-                        double[] doubleRow = data.get(dataATTR.cl).data[dataATTR.cl_index];
-
-                        for (int i = 0; i < doubleRow.length; i++) {
-                            // Trim precision to, for example, 3 decimal places
-                            doubleRow[i] = (float) doubleRow[i];
-                        }
-
-                        // Add the precision-trimmed double[] to intv_data
-                        intv_data.add(doubleRow);
-                    }
+                    for (DataATTR dataATTR : intv)
+                        intv_data.add(data.get(dataATTR.cl).data[dataATTR.cl_index]);
 
                     // Add data and Hyperblock
                     hb_data.add(intv_data);
@@ -1188,21 +1178,7 @@ public class HyperBlockGeneration
 
             for (ArrayList<Integer> skip : skips)
                 Collections.sort(skip);
-            /*
-            * for (DataATTR dataATTR : intv) {
-                        // Get the double[] row from the 2D array
-                        double[] doubleRow = data.get(dataATTR.cl).data[dataATTR.cl_index];
 
-                        for (int i = 0; i < doubleRow.length; i++) {
-                            // Trim precision to, for example, 3 decimal places
-                            doubleRow[i] = (float) doubleRow[i];
-                        }
-
-                        // Add the precision-trimmed double[] to intv_data
-                        intv_data.add(doubleRow);
-                    }
-            *
-            * */
             for (int i = 0; i < data.size(); i++) {
                 for (int j = 0; j < data.get(i).data.length; j++) {
                     if (!skips.get(i).isEmpty()) {
@@ -1236,7 +1212,8 @@ public class HyperBlockGeneration
 
         // now if we made it through that, we can simply try the cuda version, if we get an exception for no cuda, then we use the not cuda version
         try {
-            //merger_cuda(datum, seed_data);
+            //TODO: You need to handle the case where skips data is empty. if it is you need to fill with the ALL data.
+
             merger_cuda(seed_data, datum);
             order_hbs_by_class();
         }
@@ -4487,7 +4464,7 @@ public class HyperBlockGeneration
 
 
     /////////////////////////////// Rework
-    private void merger_cuda(ArrayList<ArrayList<double[]>> data, ArrayList<ArrayList<double[]>> out_data) throws ExecutionException, InterruptedException
+    private void merger_cuda(ArrayList<ArrayList<double[]>> data_with_skips, ArrayList<ArrayList<double[]>> all_data) throws ExecutionException, InterruptedException
     {
         // Initialize JCuda
         JCudaDriver.setExceptionsEnabled(true);
@@ -4523,45 +4500,55 @@ public class HyperBlockGeneration
         ArrayList<CUstream> streams = new ArrayList<>();
 
         // Get how many points is in the dataset total.
-        int numPoints = data.stream().mapToInt(ArrayList::size).sum();
-        int nPointsNotInHBs = out_data.stream().mapToInt(ArrayList::size).sum();
+        int numPoints = all_data.stream().mapToInt(ArrayList::size).sum();
+        System.out.println("Num total points" + numPoints);
 
-        System.out.println(numPoints);
-        System.out.println("npoints" + nPointsNotInHBs);
+        // How many points are not in HBs
+        int nPointsNotInHBs =  data_with_skips.stream().mapToInt(ArrayList::size).sum();
+        System.out.println("nPointsNotInHBs" + nPointsNotInHBs);
+
         int[] numBlocksOfEachClass = new int[DV.uniqueClasses.size()];
-        for(HyperBlock hb : hyper_blocks){
+        for(HyperBlock hb : hyper_blocks) {
             numBlocksOfEachClass[hb.classNum]++;
         }
 
+        System.out.println("numBlocks of each class: " + Arrays.toString(numBlocksOfEachClass));
         // I want to go through and make the data that will be passed to each kernel.
         // Each class will hopefully be its own kernel through the use of streams.
         for(int classN = 0; classN < DV.uniqueClasses.size(); classN++){
-            // Total size of dp array
-            int size = data.get(classN).size() * DV.fieldLength;
+            // Total size of datapo array
+            int totalDataSetSizeFlat = numPoints * DV.fieldLength;
+            System.out.println("totalDataSetSizeFlat: " + totalDataSetSizeFlat);
 
-            int sizeWithAddedBlocks = size + (numBlocksOfEachClass[classN] * DV.fieldLength);
+            // Size once added blocks points are taken away
+            System.out.println("All data of class " + classN + ": " + all_data.get(classN).size());
+            System.out.println("Skip data of class " + classN + ": " + data_with_skips.get(classN).size());
+            int sizeWithoutHBpoints = ((data_with_skips.get(classN).size() + numBlocksOfEachClass[classN]) * DV.fieldLength);
+            if(data_with_skips.get(classN).isEmpty()){
+                sizeWithoutHBpoints = numBlocksOfEachClass[classN] * DV.fieldLength;
+            }
+
+            System.out.println("sizeWithoutHBpoints: " + sizeWithoutHBpoints);
 
             // Will have existing blocks and rest of points of same class
-            float[] hyperBlockMinsC = new float[sizeWithAddedBlocks];
-            float[] hyperBlockMaxesC = new float[sizeWithAddedBlocks];
-            float[] combinedMinsC = new float[sizeWithAddedBlocks];
-            float[] combinedMaxesC = new float[sizeWithAddedBlocks];
+            float[] hyperBlockMinsC = new float[sizeWithoutHBpoints];
+            float[] hyperBlockMaxesC = new float[sizeWithoutHBpoints];
+            float[] combinedMinsC = new float[sizeWithoutHBpoints];
+            float[] combinedMaxesC = new float[sizeWithoutHBpoints];
 
-            System.out.println(sizeWithAddedBlocks);
             // A flag for each block of this class
-            int[] deleteFlagsC = new int[numBlocksOfEachClass[classN] + (size / DV.fieldLength)];
-
-            int nSize = out_data.get(classN).size();
+            int[] deleteFlagsC = new int[sizeWithoutHBpoints / DV.fieldLength];
+            System.out.println("deleteFlags size:" + deleteFlagsC.length);
+            int nSize = all_data.get(classN).size();
             // Will have flattened points from all other classes.
-            float[] pointsC = new float[DV.fieldLength * (nPointsNotInHBs - nSize)];
+            float[] pointsC = new float[totalDataSetSizeFlat - (nSize * DV.fieldLength)];
+            System.out.println("pointsC size:" + (totalDataSetSizeFlat - (nSize * DV.fieldLength)));
 
             int currentClassIndex = 0;
-
-
             // Iterate through all classes
             // Build the mins/maxes with the points that ARENT in the blocks for this class already.
-            for (int currentClass = 0; currentClass < data.size(); currentClass++) {
-                for (double[] point : data.get(currentClass)) {
+            for (int currentClass = 0; currentClass < data_with_skips.size(); currentClass++) {
+                for (double[] point : data_with_skips.get(currentClass)) {
                     if (currentClass == classN) {
                         // Add points to hyperBlockMinsC and hyperBlockMaxesC for the current class
                         for (double val : point) {
@@ -4572,16 +4559,17 @@ public class HyperBlockGeneration
                     }
                 }
             }
+            System.out.println("currentClassIndex (with just points): " + currentClassIndex);
 
             int otherClassIndex = 0;
             // Points from other classes should INCLUDE the points that were in other classes blocks
             // since we are using to check purity.
-            for (int currentClass = 0; currentClass < data.size(); currentClass++) {
+            for (int currentClass = 0; currentClass < all_data.size(); currentClass++) {
                 if(currentClass == classN){
                     continue;
                 }
 
-                for (double[] point : out_data.get(currentClass)) {
+                for (double[] point : all_data.get(currentClass)) {
                     // Add points to hyperBlockMinsC and hyperBlockMaxesC for the current class
                     // Add points to pointsC for other classes
                     for (double val : point) {
@@ -4591,6 +4579,7 @@ public class HyperBlockGeneration
                     }
                 }
             }
+
             // add our pre made blocks to the list of blocks. After this we add all our points of this particular class, as their own blocks as well.
             for(int hb = hyper_blocks.size() - 1; hb >= 0; hb--){
                 HyperBlock h = hyper_blocks.get(hb);
@@ -4609,7 +4598,14 @@ public class HyperBlockGeneration
                 // remove this block from the list.
                 hyper_blocks.remove(hb);
             }
-            System.out.println("Current class index" + currentClassIndex);
+            System.out.println("Class: " + DV.uniqueClasses.get(classN));
+            System.out.println("Mins: " + Arrays.toString(hyperBlockMinsC));
+            System.out.println("Maxes: " + Arrays.toString(hyperBlockMaxesC));
+            System.out.println("CombinedMins: " + Arrays.toString(combinedMinsC));
+            System.out.println("CombinedMaxes: " + Arrays.toString(combinedMaxesC));
+            System.out.println("DeleteFlags: " + Arrays.toString(deleteFlagsC));
+            System.out.println("PointsC: " + Arrays.toString(pointsC));
+
 
             hyperBlockMins.add(hyperBlockMinsC);
             hyperBlockMaxes.add(hyperBlockMaxesC);
@@ -4629,14 +4625,16 @@ public class HyperBlockGeneration
             CUstream stream = new CUstream(); // Make a stream for each class
             cuStreamCreate(stream, CUstream_flags.CU_STREAM_DEFAULT);
             streams.add(stream);
+            System.out.println("\n\n\n");
         }
+
+
 
 
 
 
         // Launch a kernel for each class.
         for (int classN = 0; classN < DV.uniqueClasses.size(); classN++) {
-            System.out.println("launching my kern");
             CUstream stream = streams.get(classN);
             CUdeviceptr d_hyperBlockMins = hyperBlockMinsALL.get(classN);
             CUdeviceptr d_hyperBlockMaxes = hyperBlockMaxesALL.get(classN);
@@ -4655,6 +4653,9 @@ public class HyperBlockGeneration
 
             CUdeviceptr d_seedQueue = CudaUtil.allocateAndCopy(seedQueue, Sizeof.INT);
 
+            System.out.println("launching my kern");
+            System.out.println("Num other class points:" + otherCPointsNum);
+            System.out.println("Num blocks:" + numBlocks);
             // Set up kernel parameters
             Pointer kernelParams = Pointer.to(
                 Pointer.to(d_hyperBlockMins),

@@ -846,6 +846,9 @@ public class DataSetup
      */
     private static double[][] normalizeData(double[][] data)
     {
+        if(true){
+            return data;
+        }
         // min and max values of each column
         maxValues = new double[data[0].length];
         minValues = new double[data[0].length];

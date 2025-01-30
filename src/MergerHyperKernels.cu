@@ -24,6 +24,12 @@ __global__ void MergerHelper1(float *hyperBlockMins, float *hyperBlockMaxes, flo
 
     int positionInSeedQueue = threadID;
     for(int deadSeedNum = 0; deadSeedNum < numBlocks; deadSeedNum++){
+        if(threadID == 0){
+            for(int i = 0; i < numBlocks; i++){
+                printf("%d, ", seedQueue[i]);
+            }
+            printf("\n");
+        }
 
         // This is the thing with accessing the right block from the queue.
         int seedBlock = seedQueue[deadSeedNum];
@@ -76,16 +82,22 @@ __global__ void MergerHelper1(float *hyperBlockMins, float *hyperBlockMaxes, flo
                 }
                 // set the flag to -1. atomic because many threads will try this.
                 atomicMin(&deleteFlags[seedBlock], -1);
+                atomicMax(&deleteFlags[threadID], 1);
             }
         } // checking one seedblock loop
         __syncthreads();
-
 
         if(threadID == 0 && deleteFlags[seedBlock] != -1){
             deleteFlags[seedBlock] = -9;
         }
 
-        // Redo the order of the non-existent queue seedQueue
+        if(threadID == 0){
+          for(int i = 0; i < numBlocks; i++){
+                        printf("%d, ", deleteFlags[i]);
+            }
+            printf("\n\n");
+        }
+        // Redo the order of the non-existent queue seedQueue /*does this need to be >= deadSeedNum*/
         if(threadID < numBlocks && positionInSeedQueue > deadSeedNum){
             int cnt = 0;
             if(deleteFlags[threadID] == 1){
@@ -100,16 +112,35 @@ __global__ void MergerHelper1(float *hyperBlockMins, float *hyperBlockMaxes, flo
             else if(deleteFlags[threadID] == 0){
                // count all non-1's to the left, then put self in deadSeedNum + count
                for(int i = positionInSeedQueue - 1; i > deadSeedNum; i--){
-                    if(deleteFlags[seedQueue[i]] == 0){
+                    if(deleteFlags[seedQueue[i]] != 1){
                         cnt++;
                     }
                }
                positionInSeedQueue = deadSeedNum + cnt + 1;
             }
 
-            // Move the block number to the right spot in the queue.
+            // Move the block number to the right spot in the queue.eeeeeee
             seedQueue[positionInSeedQueue] = threadID;
+
         }
+
+
+         if(positionInSeedQueue > deadSeedNum && threadID < numBlocks && deleteFlags[threadID] == 1){
+             int nonOneCount = 0;
+             // do this parallel later
+             for(int i = 0; i < numBlocks; i++){
+                 if(deleteFlags[i] != 1){
+                     nonOneCount++;
+                 }
+             }
+
+             // Number blocks - distance from the left border - 1 = The position
+             positionInSeedQueue = numBlocks - (positionInSeedQueue - nonOneCount) - 1;
+             seedQueue[positionInSeedQueue] = threadID;
+         }
+
+
+
 
         __syncthreads();
         //RESET THE DELETE FLAGS ALL 1 -> 0, LEAVE -1 and -9 ALONE
