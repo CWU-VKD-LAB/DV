@@ -7,7 +7,7 @@ extern "C"
 // iterate to the next one, merging the blocks to that one and so on.
 // we have only passed in countercases, not cases of our own class, all the blocks we are testing are also already the same class.
 // may need some changing around, when we test with a dataset over 2000 ish attributes we can't use shared memory to store the seedblock attributes, so we just will use global if such a thing happens.
-__global__ void MergerHelper1(float *hyperBlockMins, float *hyperBlockMaxes, float *combinedMins, float *combinedMaxes, int *deleteFlags, int *mergable, int numAttributes, float *points, int numPoints, int numBlocks, int* seedQueue){
+__global__ void MergerHelper1(float *hyperBlockMins, float *hyperBlockMaxes, float *combinedMins, float *combinedMaxes, int *deleteFlags, int *mergable, const int numAttributes, float *points, const int numPoints, const int numBlocks, int* seedQueue){
     // shared memory is going to be 2 * numAttributes * sizeof(float) long. this lets us load the whole seed block into memory
     extern __shared__ float seedBlockAttributes[];
     __syncthreads();
