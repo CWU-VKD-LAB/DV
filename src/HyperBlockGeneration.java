@@ -4512,7 +4512,7 @@ public class HyperBlockGeneration
             numBlocksOfEachClass[hb.classNum]++;
         }
 
-        System.out.println("numBlocks of each class: " + Arrays.toString(numBlocksOfEachClass));
+        System.out.println("NumBlocks of each class: " + Arrays.toString(numBlocksOfEachClass));
         // I want to go through and make the data that will be passed to each kernel.
         // Each class will hopefully be its own kernel through the use of streams.
         for(int classN = 0; classN < DV.uniqueClasses.size(); classN++){
@@ -4559,7 +4559,6 @@ public class HyperBlockGeneration
                     }
                 }
             }
-            System.out.println("currentClassIndex (with just points): " + currentClassIndex);
 
             int otherClassIndex = 0;
             // Points from other classes should INCLUDE the points that were in other classes blocks
@@ -4599,12 +4598,12 @@ public class HyperBlockGeneration
                 hyper_blocks.remove(hb);
             }
             System.out.println("Class: " + DV.uniqueClasses.get(classN));
-            System.out.println("Mins: " + Arrays.toString(hyperBlockMinsC));
-            System.out.println("Maxes: " + Arrays.toString(hyperBlockMaxesC));
-            System.out.println("CombinedMins: " + Arrays.toString(combinedMinsC));
-            System.out.println("CombinedMaxes: " + Arrays.toString(combinedMaxesC));
-            System.out.println("DeleteFlags: " + Arrays.toString(deleteFlagsC));
-            System.out.println("PointsC: " + Arrays.toString(pointsC));
+            //System.out.println("Mins: " + Arrays.toString(hyperBlockMinsC));
+            //System.out.println("Maxes: " + Arrays.toString(hyperBlockMaxesC));
+            //System.out.println("CombinedMins: " + Arrays.toString(combinedMinsC));
+            //System.out.println("CombinedMaxes: " + Arrays.toString(combinedMaxesC));
+            //System.out.println("DeleteFlags: " + Arrays.toString(deleteFlagsC));
+            //System.out.println("PointsC: " + Arrays.toString(pointsC));
 
 
             hyperBlockMins.add(hyperBlockMinsC);
@@ -4642,10 +4641,12 @@ public class HyperBlockGeneration
             CUdeviceptr d_combinedMaxes = combinedMaxesALL.get(classN);
             CUdeviceptr d_deleteFlags = deleteFlagsALL.get(classN);
 
+
             CUdeviceptr d_points = d_pointsALL.get(classN);
 
             int otherCPointsNum = points.get(classN).length / DV.fieldLength;
             int numBlocks = hyperBlockMins.get(classN).length / DV.fieldLength;
+            CUdeviceptr d_mergable = CudaUtil.allocateAndCopy(new int[numBlocks], Sizeof.INT);
             int[] seedQueue = new int[numBlocks];
             for (int i = 0; i < numBlocks; i++) {
                 seedQueue[i] = i;
@@ -4653,7 +4654,7 @@ public class HyperBlockGeneration
 
             CUdeviceptr d_seedQueue = CudaUtil.allocateAndCopy(seedQueue, Sizeof.INT);
 
-            System.out.println("launching my kern");
+            System.out.println("LAUNCHING A KERNEL");
             System.out.println("Num other class points:" + otherCPointsNum);
             System.out.println("Num blocks:" + numBlocks);
             // Set up kernel parameters
@@ -4663,6 +4664,7 @@ public class HyperBlockGeneration
                 Pointer.to(d_combinedMins),
                 Pointer.to(d_combinedMaxes),
                 Pointer.to(d_deleteFlags),
+                Pointer.to(d_mergable),
                 Pointer.to(new int[]{DV.fieldLength}),
                 Pointer.to(d_points),
                 Pointer.to(new int[]{otherCPointsNum}),
@@ -4672,7 +4674,7 @@ public class HyperBlockGeneration
 
 
             int blockSize = 1024; // number of threads
-            int gridSize = (otherCPointsNum +  blockSize - 1) / blockSize;
+            int gridSize = (numBlocks + blockSize - 1) / blockSize;
             int sharedMem = 2 * DV.fieldLength * Sizeof.FLOAT;
             cuLaunchKernel(mergerHelper1,
                     gridSize, 1, 1,
@@ -4692,6 +4694,7 @@ public class HyperBlockGeneration
             float[] resultMins = new float[hyperBlockMins.get(classN).length];
             float[] resultMaxes = new float[hyperBlockMaxes.get(classN).length];
             int[] deleteFlag = new int[deleteFlags.get(classN).length];
+            System.out.println("Delete flags when copying back size: " + deleteFlag.length);
 
             cuMemcpyDtoH(Pointer.to(resultMins), hyperBlockMinsALL.get(classN), (long) resultMins.length * Sizeof.FLOAT);
             cuMemcpyDtoH(Pointer.to(resultMaxes), hyperBlockMaxesALL.get(classN), (long) resultMaxes.length * Sizeof.FLOAT);

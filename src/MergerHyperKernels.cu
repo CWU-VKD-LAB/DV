@@ -7,7 +7,7 @@ extern "C"
 // iterate to the next one, merging the blocks to that one and so on.
 // we have only passed in countercases, not cases of our own class, all the blocks we are testing are also already the same class.
 // may need some changing around, when we test with a dataset over 2000 ish attributes we can't use shared memory to store the seedblock attributes, so we just will use global if such a thing happens.
-__global__ void MergerHelper1(float *hyperBlockMins, float *hyperBlockMaxes, float *combinedMins, float *combinedMaxes, int *deleteFlags, int numAttributes, float *points, int numPoints, int numBlocks, int* seedQueue){
+__global__ void MergerHelper1(float *hyperBlockMins, float *hyperBlockMaxes, float *combinedMins, float *combinedMaxes, int *deleteFlags, int *mergable, int numAttributes, float *points, int numPoints, int numBlocks, int* seedQueue){
     // shared memory is going to be 2 * numAttributes * sizeof(float) long. this lets us load the whole seed block into memory
     extern __shared__ float seedBlockAttributes[];
     __syncthreads();
@@ -27,12 +27,25 @@ __global__ void MergerHelper1(float *hyperBlockMins, float *hyperBlockMaxes, flo
     int positionInSeedQueue = threadID;
     __syncthreads();
 
-    bool mergable = true;
     for(int deadSeedNum = 0; deadSeedNum < numBlocks; deadSeedNum++){
+
         __syncthreads();
         // This is the thing with accessing the right block from the queue.
         int seedBlock = seedQueue[deadSeedNum];
+        if(threadID == seedBlock){
+            positionInSeedQueue = deadSeedNum;
+        }
         __syncthreads();
+        /*
+          if(threadID == 0){
+                    for(int i = 0; i < numBlocks; i++){
+                        printf("%d,", seedQueue[i]);
+                    }
+                    printf("\t\tseed == %d", seedBlock);
+                    printf("\n\n");
+
+                }
+        */
 
         // copy the seed blocks attributes into shared memory, so that we can load stuff much faster.
         // block Dim is how many threads in a block. since each block has it's own shared memory, this is our offset for copying stuff over. this is needed because
@@ -47,7 +60,7 @@ __global__ void MergerHelper1(float *hyperBlockMins, float *hyperBlockMaxes, flo
         // we don't have to test blocks before the seedblock, since they've already been tested
         // also we aren't going to have a block if the threadID is too big.
         // make the combined mins and maxes, and then check against all our data.
-        if (threadID != seedBlock && threadID < numBlocks && deleteFlags[threadID] >= 0 ){
+        if (threadID != seedBlock && threadID < numBlocks && deleteFlags[threadID] != -1 ){
 
             // first we build our combined list.
             for (int i = 0; i < numAttributes; i++){
@@ -74,7 +87,7 @@ __global__ void MergerHelper1(float *hyperBlockMins, float *hyperBlockMaxes, flo
             }
             // if we did pass all the points, that means we can merge, and we can set the updated mins and maxes for this point to be the combined attributes instead.
             // then we simply flag that seedBlock is trash.
-            if (allPassed && deleteFlags[threadID] >= 0){
+            if (allPassed){
                 // copy the combined mins and maxes into the original array
                 for (int i = 0; i < numAttributes; i++){
                     hyperBlockMins[threadID * numAttributes + i] = thisBlockCombinedMins[i];
@@ -83,35 +96,44 @@ __global__ void MergerHelper1(float *hyperBlockMins, float *hyperBlockMaxes, flo
                 // set the flag to -1. atomic because many threads will try this.
 
                 atomicMin(&deleteFlags[seedBlock], -1);
-                atomicMax(&deleteFlags[threadID], 1);
+                mergable[threadID] = 1;
             }
         } // checking one seedblock loop
         __syncthreads();
 
-
+        /*
+        Get rid of the 9 idea, we just will leave as a 0
         if(threadID == 0 && deleteFlags[seedBlock] != -1){
             deleteFlags[seedBlock] = -9;
         }
 
+        if(threadID == 0){
+          if(threadID == 0){
+            for(int i = 0; i < numBlocks; i++){
+                printf("%d,", mergable[i]);
+                    }
+                printf("\n\n");
+            }
+        }
+        */
         __syncthreads();
-
         // Redo the order of the non-existent queue seedQueue
-        if(threadID < numBlocks){
+        if(threadID < numBlocks && positionInSeedQueue > deadSeedNum){
             int cnt = 0;
 
-            if(deleteFlags[threadID] == 1){
+            if(mergable[threadID] == 1){
                 // Count how many 1's are to the left of me, put self
                 for(int i = positionInSeedQueue - 1; i >= 0; i--){
-                    if(deleteFlags[seedQueue[i]] == 1){
+                    if(mergable[seedQueue[i]] == 1){
                         cnt++;
                     }
                 }
                 positionInSeedQueue = numBlocks - 1 - cnt;
             }
-            else if(deleteFlags[threadID] == 0){
+            else{
                // count all non-1's to the left, then put self in deadSeedNum + count
                for(int i = positionInSeedQueue - 1; i >= 0; i--){
-                    if(deleteFlags[seedQueue[i]] != 1){
+                    if(mergable[seedQueue[i]] == 0){
                         cnt++;
                     }
                }
@@ -120,14 +142,13 @@ __global__ void MergerHelper1(float *hyperBlockMins, float *hyperBlockMaxes, flo
         }
 
         __syncthreads();
-        if(threadID < numBlocks){
+        if(threadID < numBlocks && positionInSeedQueue > deadSeedNum){
             seedQueue[positionInSeedQueue] = threadID;
         }
 
-        __syncthreads();
-        //RESET THE DELETE FLAGS ALL 1 -> 0, LEAVE -1 and -9 ALONE
-        if(threadID < numBlocks && deleteFlags[threadID] == 1){
-            deleteFlags[threadID] = 0;
+        //RESET THE MERGING FLAGS
+        if(threadID < numBlocks){
+            mergable[threadID] = 0;
         }
         __syncthreads();
     }

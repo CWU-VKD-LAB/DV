@@ -2,7 +2,6 @@ extern "C"
 
 
 // Global memory: Slow, can be accessed by all threads regardless of block. Slow!!
-
 // Shared memory: Shared by all threads in the same block, much faster than global memory.
 __global__ void removeUselessHelper(float* mins, float* maxes, int* intervalCounts,
     int minMaxLen, int* blockEdges, int numBlocks, int* blockClasses,
