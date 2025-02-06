@@ -1,3 +1,5 @@
+import jcuda.runtime.JCuda;
+import jcuda.runtime.cudaDeviceProp;
 import org.jfree.chart.*;
 import org.jfree.chart.axis.NumberAxis;
 import org.jfree.chart.axis.NumberTickUnit;
@@ -604,7 +606,7 @@ public class HyperBlockGeneration
         //assignPointsToBlocks(float *dataPointsArray, int numAttributes, int numPoints, float *blockMins, float *blockMaxes, int *blockEdges, int numBlocks, int *dataPointBlocks, int *numPointsInBlocks){
         long startTime = System.currentTimeMillis();
 
-        JCudaDriver.setExceptionsEnabled(true);
+        setExceptionsEnabled(true);
         cuInit(0);
 
         // Create a context
@@ -729,7 +731,7 @@ public class HyperBlockGeneration
         // int[] classBorder: The borders of the points in the classes ex: [0, 20, 100] class 1 from 0-19, class 2 20-99
 
         // Initialize JCuda
-        JCudaDriver.setExceptionsEnabled(true);
+        setExceptionsEnabled(true);
         cuInit(0);
 
         // Create a context
@@ -2396,7 +2398,7 @@ public class HyperBlockGeneration
                 "Remove Useless Attributes",
                 "CUDA RUA",
                 "Create Disjunctive Blocks",
-                "Remove Useless Blocks",
+                "smashBlocks();",
                 "CUDA RUB",
                 "Expansion Algorithm" //Currently disabled until made interactive and ran by Dr. K
         });
@@ -2405,7 +2407,10 @@ public class HyperBlockGeneration
             if (selected.equals("Remove Useless Attributes")) removeUselessAttributes();
             else if (selected.equals("CUDA RUA")) removeUselessAttributesCUDA();
             else if (selected.equals("Create Disjunctive Blocks")) simplifyHBtoDisjunctiveForm();
-            else if (selected.equals("Remove Useless Blocks")) removeUselessBlocks();
+            else if (selected.equals("smashBlocks();")) {
+                smashBlocks();
+                return;
+            }
             else if (selected.equals("CUDA RUB")) removeUselessBlocksCuda();
             else if (selected.equals("Expansion Algorithm")){
                 expansionScroll.setVisible(true);
@@ -4461,13 +4466,11 @@ public class HyperBlockGeneration
         hyper_blocks.addAll(blocks);
     }
 
-
-
     /////////////////////////////// Rework
     private void merger_cuda(ArrayList<ArrayList<double[]>> data_with_skips, ArrayList<ArrayList<double[]>> all_data) throws ExecutionException, InterruptedException
     {
         // Initialize JCuda
-        JCudaDriver.setExceptionsEnabled(true);
+        setExceptionsEnabled(true);
         cuInit(0);
 
         // Create a context
@@ -4475,6 +4478,12 @@ public class HyperBlockGeneration
         cuDeviceGet(device, 0);
         CUcontext context = new CUcontext();
         cuCtxCreate(context, 0, device);
+
+        cudaDeviceProp prop = new cudaDeviceProp();
+        JCuda.cudaGetDeviceProperties(prop, 0);
+
+        int totalCores = CudaUtil.getNumberCudaCores(prop);
+        System.out.println("Total number of CUDA cores: " + totalCores);
 
         // Load the kernel
         CUmodule module1 = new CUmodule();
@@ -4498,7 +4507,7 @@ public class HyperBlockGeneration
         ArrayList<CUdeviceptr> deleteFlagsALL = new ArrayList<>();
         ArrayList<CUdeviceptr> d_pointsALL = new ArrayList<>();
         ArrayList<CUstream> streams = new ArrayList<>();
-
+        ArrayList<CUdeviceptr> d_usedFlagsALL = new ArrayList<>();
         // Get how many points is in the dataset total.
         int numPoints = all_data.stream().mapToInt(ArrayList::size).sum();
         System.out.println("Num total points" + numPoints);
@@ -4597,13 +4606,6 @@ public class HyperBlockGeneration
                 // remove this block from the list.
                 hyper_blocks.remove(hb);
             }
-            System.out.println("Class: " + DV.uniqueClasses.get(classN));
-            //System.out.println("Mins: " + Arrays.toString(hyperBlockMinsC));
-            //System.out.println("Maxes: " + Arrays.toString(hyperBlockMaxesC));
-            //System.out.println("CombinedMins: " + Arrays.toString(combinedMinsC));
-            //System.out.println("CombinedMaxes: " + Arrays.toString(combinedMaxesC));
-            //System.out.println("DeleteFlags: " + Arrays.toString(deleteFlagsC));
-            //System.out.println("PointsC: " + Arrays.toString(pointsC));
 
 
             hyperBlockMins.add(hyperBlockMinsC);
@@ -4620,16 +4622,14 @@ public class HyperBlockGeneration
             combinedMaxesALL.add(CudaUtil.allocateAndCopy(combinedMaxesC, Sizeof.FLOAT));
             deleteFlagsALL.add(CudaUtil.allocateAndCopy(deleteFlagsC, Sizeof.INT));
             d_pointsALL.add(CudaUtil.allocateAndCopy(pointsC, Sizeof.FLOAT));
+            int numBlocks = hyperBlockMins.get(classN).length / DV.fieldLength;
+            d_usedFlagsALL.add(CudaUtil.allocateAndCopy(new int[numBlocks], Sizeof.INT));
 
             CUstream stream = new CUstream(); // Make a stream for each class
             cuStreamCreate(stream, CUstream_flags.CU_STREAM_DEFAULT);
             streams.add(stream);
             System.out.println("\n\n\n");
         }
-
-
-
-
 
 
         // Launch a kernel for each class.
@@ -4641,11 +4641,11 @@ public class HyperBlockGeneration
             CUdeviceptr d_combinedMaxes = combinedMaxesALL.get(classN);
             CUdeviceptr d_deleteFlags = deleteFlagsALL.get(classN);
 
-
             CUdeviceptr d_points = d_pointsALL.get(classN);
 
             int otherCPointsNum = points.get(classN).length / DV.fieldLength;
             int numBlocks = hyperBlockMins.get(classN).length / DV.fieldLength;
+
             CUdeviceptr d_mergable = CudaUtil.allocateAndCopy(new int[numBlocks], Sizeof.INT);
             int[] seedQueue = new int[numBlocks];
             for (int i = 0; i < numBlocks; i++) {
@@ -4653,40 +4653,58 @@ public class HyperBlockGeneration
             }
 
             CUdeviceptr d_seedQueue = CudaUtil.allocateAndCopy(seedQueue, Sizeof.INT);
-
+            CUdeviceptr d_writeSeedQueue = CudaUtil.allocateAndCopy(seedQueue, Sizeof.INT);
             System.out.println("LAUNCHING A KERNEL");
             System.out.println("Num other class points:" + otherCPointsNum);
             System.out.println("Num blocks:" + numBlocks);
-            // Set up kernel parameters
-            Pointer kernelParams = Pointer.to(
-                Pointer.to(d_hyperBlockMins),
-                Pointer.to(d_hyperBlockMaxes),
-                Pointer.to(d_combinedMins),
-                Pointer.to(d_combinedMaxes),
-                Pointer.to(d_deleteFlags),
-                Pointer.to(d_mergable),
-                Pointer.to(new int[]{DV.fieldLength}),
-                Pointer.to(d_points),
-                Pointer.to(new int[]{otherCPointsNum}),
-                Pointer.to(new int[]{numBlocks}),
-                Pointer.to(d_seedQueue)
-            );
 
+            CUdeviceptr blockSync = CudaUtil.allocateAndCopy(new int[1], Sizeof.INT);
 
             int blockSize = 1024; // number of threads
-            int gridSize = (numBlocks + blockSize - 1) / blockSize;
-            int sharedMem = 2 * DV.fieldLength * Sizeof.FLOAT;
+            int gridSize = Math.floorDiv(totalCores, blockSize);
+            if(numBlocks < 1024){
+                blockSize = 0;
+                while(blockSize < numBlocks){
+                    blockSize+= 32;
+                }
+            }
+            int totalThreadsLaunched = blockSize * gridSize;
+
+            System.out.println("Number blocks launched: " + gridSize);
+            System.out.println("Total number of threads: " + totalThreadsLaunched);
+            System.out.println("Block size: " + blockSize);
+            System.out.println("Grid size: " + gridSize);
+            Pointer kernelParams = Pointer.to(
+                    Pointer.to(d_hyperBlockMins),
+                    Pointer.to(d_hyperBlockMaxes),
+                    Pointer.to(d_combinedMins),
+                    Pointer.to(d_combinedMaxes),
+                    Pointer.to(d_deleteFlags),
+                    Pointer.to(d_mergable),
+                    Pointer.to(new int[]{DV.fieldLength}),
+                    Pointer.to(d_points),
+                    Pointer.to(new int[]{otherCPointsNum}),
+                    Pointer.to(new int[]{numBlocks}),
+                    Pointer.to(d_seedQueue),                // The seed queue
+                    Pointer.to(d_usedFlagsALL.get(classN)), // DEBUG USED FLAGS, IF NOTICE THIS AFTER COMPLETE, REMOVE
+                    Pointer.to(blockSync),
+                    Pointer.to(new int[]{totalThreadsLaunched}),  // threadCount
+                    Pointer.to(d_writeSeedQueue)
+            );
+
+            int sharedMem = 2 * DV.fieldLength * Sizeof.FLOAT + Sizeof.INT;
             cuLaunchKernel(mergerHelper1,
                     gridSize, 1, 1,
                     blockSize, 1, 1,
                     sharedMem, stream,
                     kernelParams, null
             );
+            cuStreamSynchronize(stream);
             // Launch the kernel for the current class using the corresponding stream
         }
 
 
-        for (CUstream stream : streams) cuStreamSynchronize(stream);
+        //for (CUstream stream : streams) cuStreamSynchronize(stream);
         cuCtxSynchronize();
 
 
@@ -4694,13 +4712,16 @@ public class HyperBlockGeneration
             float[] resultMins = new float[hyperBlockMins.get(classN).length];
             float[] resultMaxes = new float[hyperBlockMaxes.get(classN).length];
             int[] deleteFlag = new int[deleteFlags.get(classN).length];
+            int[] usedFlags = new int[deleteFlags.get(classN).length];
+
             System.out.println("Delete flags when copying back size: " + deleteFlag.length);
 
             cuMemcpyDtoH(Pointer.to(resultMins), hyperBlockMinsALL.get(classN), (long) resultMins.length * Sizeof.FLOAT);
             cuMemcpyDtoH(Pointer.to(resultMaxes), hyperBlockMaxesALL.get(classN), (long) resultMaxes.length * Sizeof.FLOAT);
             cuMemcpyDtoH(Pointer.to(deleteFlag), deleteFlagsALL.get(classN), (long) deleteFlag.length * Sizeof.INT);
+            cuMemcpyDtoH(Pointer.to(usedFlags), d_usedFlagsALL.get(classN), (long) deleteFlag.length * Sizeof.INT);
             System.out.println("Delete Flags" + Arrays.toString(deleteFlag));
-
+            System.out.println("Used Flags:" + Arrays.toString(usedFlags));
             // Go through the results and make a new block every DV.FieldLen
             for(int i = 0; i < resultMins.length; i += DV.fieldLength){
                 if(deleteFlag[i / DV.fieldLength] == -1){
@@ -4729,13 +4750,71 @@ public class HyperBlockGeneration
         for (CUdeviceptr ptr : combinedMaxesALL) cuMemFree(ptr);
         for (CUdeviceptr ptr : deleteFlagsALL) cuMemFree(ptr);
         for (CUdeviceptr ptr : d_pointsALL) cuMemFree(ptr);
+        for(CUdeviceptr ptr : d_usedFlagsALL) cuMemFree(ptr);
         for (CUstream stream : streams) cuStreamDestroy(stream);
         cuCtxDestroy(context);
     }
 
 
     ///////////////////////////////////////////////////
+    private void smashBlocks(){
+        Scanner scan = new Scanner(System.in);
 
+        System.out.println("Please enter hb1: ");
+        int hb1 = scan.nextInt();
+
+        System.out.println("Please enter hb2: ");
+        int hb2 = scan.nextInt();
+
+        HyperBlock block1 = hyper_blocks.get(hb1);
+        HyperBlock block2 = hyper_blocks.get(hb2);
+
+        System.out.println("OLD MINS HB1: " + block1.minimums);
+        System.out.println("OLD MAXES HB1: " + block1.maximums);
+        System.out.println("OLD MINS HB2: " + block2.minimums);
+        System.out.println("OLD MAXES HB2: " + block2.maximums);
+
+        // Create the MEGA BLOCK!!!!!!!
+        for(int k = 0; k < DV.fieldLength; k++){
+            double newMin = Math.min(block1.minimums.get(k).get(0), block2.minimums.get(k).get(0));
+            double newMax = Math.max(block1.maximums.get(k).get(0), block2.maximums.get(k).get(0));
+
+            block1.minimums.get(k).set(0,  newMin);
+            block1.maximums.get(k).set(0, newMax);
+        }
+
+        System.out.println("NEW MINS: " + block1.minimums);
+        System.out.println("NEW MAXES: " + block1.maximums);
+
+        // Go through all the data of other classes, check if it would fall into the new bounds of merged disjunctive block.
+        int classNum = block1.classNum;
+        boolean doMerge = true;
+        for(int k = 0; k < data.size(); k++) {
+
+            // skip data of same class
+            if(classNum == k){
+                continue;
+            }
+
+            for (double[] point : data.get(k).data) {
+                // Check if the point is within the MEGA BLOCK
+                if(inside_HB(hb1, point)){
+                    doMerge = false;
+                    break;
+                }
+            }
+
+            if(!doMerge){break;}
+        }
+
+        if(doMerge) {
+            // Create deep copies of mins and maxes
+            System.out.println("We can merge the specified blocks");
+        }
+        else{
+            System.out.println("The blocks are not mergable");
+        }
+    }
 
 
 
