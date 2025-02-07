@@ -1,3 +1,5 @@
+#include <cooperative_groups.h>
+namespace cg = cooperative_groups;
 extern "C"
 
 #define max(a, b) (a > b)? a: b
@@ -8,29 +10,20 @@ extern "C"
 // we have only passed in countercases, not cases of our own class, all the blocks we are testing are also already the same class.
 // may need some changing around, when we test with a dataset over 2000 ish attributes we can't use shared memory to store the seedblock attributes, so we just will use global if such a thing happens.
 __global__ void MergerHelper1(float *hyperBlockMins, float *hyperBlockMaxes, float *combinedMins, float *combinedMaxes, int *deleteFlags, int *mergable, const int numAttributes, float *points, const int numPoints, const int numBlocks, int* readSeedQueue, int* usedFlagsDebugOnly, int* blockSync, int totalThreadCnt, int* writeSeedQueue){
-    //printf("Hello from inside the kernel.");
-    // shared memory is going to be 2 * numAttributes * sizeof(float) long. this lets us load the whole seed block into memory
+
     extern __shared__ float seedBlockAttributes[];
-    int numCudaBlocks = gridDim.x;
-    //const int CUDA_NUM_BLOCKS = gridDim.x;
+    cg::grid_group grid = cg::this_grid();
 
     // stored in the same array, but using two pointers we can make this easy.
     float *seedBlockMins = &seedBlockAttributes[0];
     float *seedBlockMaxes = &seedBlockAttributes[numAttributes];
 
-    // get our thread id
     int threadID = blockIdx.x * blockDim.x + threadIdx.x;
-
-    //printf("%d", CUDA_NUM_BLOCKS);
 
     float *thisBlockCombinedMins = &combinedMins[threadID * numAttributes];
     float *thisBlockCombinedMaxes = &combinedMaxes[threadID * numAttributes];
 
     for(int deadSeedNum = 0; deadSeedNum < numBlocks; deadSeedNum++){
-        if(threadID == 0){
-            printf("%d\n", deadSeedNum);
-        }
-        __syncthreads();
 
         if(deadSeedNum > 0){
             int* tmp = readSeedQueue;
@@ -38,19 +31,10 @@ __global__ void MergerHelper1(float *hyperBlockMins, float *hyperBlockMaxes, flo
             writeSeedQueue = tmp;
         }
 
-        if(threadIdx.x == 0){atomicAdd(blockSync, 1);     while(atomicAdd(blockSync, 0) < numCudaBlocks) { }} // SPIN TO SYNC BLOCKS
-        __syncthreads();
-
-        if(threadID == 0){
-            atomicExch(blockSync, 0); // Reset the global int to 0.
-        }
-
         // This is the thing with accessing the right block from the queue.
         int seedBlock = readSeedQueue[deadSeedNum];
 
-        //if(threadID == 0){usedFlagsDebugOnly[seedBlock] = 1;} //DEBUG
-
-        __syncthreads();
+        //if(threadID == 0){usedFlagsDebugOnly[seedBlock]++;} //DEBUG
 
         // copy the seed blocks attributes into shared memory, so that we can load stuff much faster.block Dim is how many threads in a block. since each block has it's own shared memory, this is our offset for copying stuff over. this is needed becausewe could have more than 1024 attributes very easily.
         for (int index = threadIdx.x; index < numAttributes; index += blockDim.x){
@@ -58,10 +42,9 @@ __global__ void MergerHelper1(float *hyperBlockMins, float *hyperBlockMaxes, flo
             seedBlockMaxes[index] = hyperBlockMaxes[seedBlock * numAttributes + index];
         }
         // sync when we're done copying over the seedblock values.
-        __syncthreads();
+        grid.sync();
 
         int k = threadID;
-
         while(k < numBlocks){
 
             // make the combined mins and maxes, and then check against all our data.
@@ -109,19 +92,8 @@ __global__ void MergerHelper1(float *hyperBlockMins, float *hyperBlockMaxes, flo
             k += totalThreadCnt;
         }
 
+        grid.sync();
 
-        if(threadIdx.x == 0){atomicAdd(blockSync, 1); while(atomicAdd(blockSync, 0) < numCudaBlocks) { }} // SYNC BLOCKS
-        __syncthreads();
-
-        if(threadID == 0){
-           atomicExch(blockSync, 0); // Reset the global int to 0.
-           for(int i = 0; i <= deadSeedNum; i++){
-               mergable[readSeedQueue[i]] = 0;
-           }
-        }
-
-        __syncthreads();
-        //Reset
         k = threadID;
         while(k < numBlocks){
             if(k > deadSeedNum){
@@ -152,15 +124,10 @@ __global__ void MergerHelper1(float *hyperBlockMins, float *hyperBlockMaxes, flo
             k += totalThreadCnt;
         }
 
+        // once the queues are rearranged, we sync and reset the mergable flags.
+        grid.sync();
 
-         if(threadIdx.x == 0){atomicAdd(blockSync, 1); while(atomicAdd(blockSync, 0) < numCudaBlocks) { }} // SYNC BLOCKS
-         if(threadID == 0){
-            atomicExch(blockSync, 0); // Reset the global int to 0.
-         }
-
-        __syncthreads();
-
-        //RESET THE MERGING FLAGS
+        //RESET THE MERGING FLAGS FOR NEXT ITERATION
         k = threadID;
         while(k < numBlocks){
             mergable[k] = 0;
