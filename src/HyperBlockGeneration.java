@@ -4668,10 +4668,13 @@ public class HyperBlockGeneration
                     blockSize+= 32;
                 }
             }
+
+            blockSize = 64;
+            gridSize = 22;
             int totalThreadsLaunched = blockSize * gridSize;
 
             System.out.println("Number blocks launched: " + gridSize);
-            System.out.println("Total number of threads: " + totalThreadsLaunched);
+
             System.out.println("Block size: " + blockSize);
             System.out.println("Grid size: " + gridSize);
             Pointer kernelParams = Pointer.to(
@@ -4693,19 +4696,19 @@ public class HyperBlockGeneration
             );
 
             int sharedMem = 2 * DV.fieldLength * Sizeof.FLOAT + Sizeof.INT;
-            cuLaunchKernel(mergerHelper1,
+            cuLaunchCooperativeKernel(mergerHelper1,
                     gridSize, 1, 1,
                     blockSize, 1, 1,
-                    sharedMem, stream,
-                    kernelParams, null
+                    sharedMem, null,
+                    kernelParams
             );
-            cuStreamSynchronize(stream);
+            cuCtxSynchronize();
             // Launch the kernel for the current class using the corresponding stream
         }
 
 
         //for (CUstream stream : streams) cuStreamSynchronize(stream);
-        cuCtxSynchronize();
+        //cuCtxSynchronize();
 
 
         for (int classN = 0; classN < DV.uniqueClasses.size(); classN++) {
