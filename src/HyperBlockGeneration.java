@@ -1,3 +1,5 @@
+import jcuda.runtime.JCuda;
+import jcuda.runtime.cudaDeviceProp;
 import org.jfree.chart.*;
 import org.jfree.chart.axis.NumberAxis;
 import org.jfree.chart.axis.NumberTickUnit;
@@ -14,12 +16,16 @@ import java.awt.*;
 import java.awt.geom.Ellipse2D;
 import java.awt.image.BufferedImage;
 import java.io.*;
+import java.security.Provider;
+import java.sql.Array;
 import java.util.*;
 import java.util.List;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicIntegerArray;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.IntStream;
+
 import jcuda.*;
 import jcuda.driver.*;
 
@@ -36,9 +42,10 @@ public class HyperBlockGeneration
      * Data
      ************************************************************/
     ArrayList<DataObject> data;
+    ArrayList<DataObject> testData;
 
     /************************************************************
-     * Hyperblocks
+     * Hyper-blocks
      ************************************************************/
     JSpinner hb_lvl;
 
@@ -102,13 +109,11 @@ public class HyperBlockGeneration
 
         // generate hyperblocks, and print hyperblock info
         getData();
-        /*
-
 
         if(useSaved){
             try {
                 // Deserialize the ArrayList of HyperBlock objects from the file
-                FileInputStream fileIn = new FileInputStream("mnist2_7.ser");
+                FileInputStream fileIn = new FileInputStream("test.ser");
                 ObjectInputStream in = new ObjectInputStream(fileIn);
                 hyper_blocks = (ArrayList<HyperBlock>) in.readObject();
                 in.close();
@@ -122,22 +127,53 @@ public class HyperBlockGeneration
             }
 
         }else{
-            generateHBs(false);
+            long startTime = System.currentTimeMillis();
+            generateHBs(true);
+            long endTime = System.currentTimeMillis();
+            long duration = endTime - startTime;
+            System.out.println("Generate Hbs: " + duration + " ms");
+        }
+
+        /*
+        System.out.println("Number of blocks" + hyper_blocks.size());
+        int l = 0;
+        for(HyperBlock hb : hyper_blocks){
+            System.out.println("Printing hyper-block" + l);
+            System.out.println(hb.maximums);
+            System.out.println(hb.minimums + "\n\n\n");
+            l++;
         }
         */
-        generateHBs(false);
-        HB_analytics();
 
-        System.out.println(DV.trainData.get(1).data.length);
+
+
+        //Time taken for analytics
+        long startTime = System.currentTimeMillis();
+        HB_analytics();
+        long endTime = System.currentTimeMillis();
+        long duration = endTime - startTime;
+        System.out.println("Analytics: " + duration + " ms");
+
         // visualize hyperblocks
         if (!hyper_blocks.isEmpty())
         {
-            HB_GUI();
-            getPlot();
+            long hbS = System.currentTimeMillis();
+                    HB_GUI();
+            long hbE = System.currentTimeMillis();
+            long hbD = hbE - hbS;
+            System.out.println("HB_GUI: " + hbD + " ms");
+
+
+            hbS = System.currentTimeMillis();
+                    getPlot();
+            hbE = System.currentTimeMillis();
+            hbD = hbE - hbS;
+            System.out.println("getPlot: " + hbD + " ms");
         }
 
         HB_analytics();
 
+        long startTime2 = System.currentTimeMillis();
         /**
          * Set the original position of blocks in the list
          * This helps with keeping track of what blocks
@@ -149,18 +185,22 @@ public class HyperBlockGeneration
         }
 
         blockStats = new HyperBlockStatistics(this);
+        long endTime2 = System.currentTimeMillis();
+        long duration2 = endTime2 - startTime2;
+        System.out.println("Stats stuff: " + duration2 + " ms");
+
         // k-fold used to be here
         //test_HBs();
 
-
+        /*
         try{
-            saveHyperBlocksToFile("test.ser");
+            //saveHyperBlocksToFile("test.ser");
         } catch (IOException e) {
             throw new RuntimeException(e);
         } catch (ClassNotFoundException e) {
             throw new RuntimeException(e);
         }
-
+        */
     }
 
     private void saveHyperBlocksToFile(String fileName) throws IOException, ClassNotFoundException {
@@ -562,6 +602,120 @@ public class HyperBlockGeneration
         }
     }
 
+    private void removeUselessBlocksCuda(){
+        //assignPointsToBlocks(float *dataPointsArray, int numAttributes, int numPoints, float *blockMins, float *blockMaxes, int *blockEdges, int numBlocks, int *dataPointBlocks, int *numPointsInBlocks){
+        long startTime = System.currentTimeMillis();
+
+        setExceptionsEnabled(true);
+        cuInit(0);
+
+        // Create a context
+        CUdevice device = new CUdevice();
+        cuDeviceGet(device, 0);
+        CUcontext context = new CUcontext();
+        cuCtxCreate(context, 0, device);
+
+        // Load the kernel
+        CUmodule module1 = new CUmodule();
+        cuModuleLoad(module1, ".\\src\\RemoveUselessBlocksCuda.ptx");
+        CUfunction uselessBlockHelper = new CUfunction();
+        cuModuleGetFunction(uselessBlockHelper, module1, "removeBlocksHelper");
+
+
+
+        System.out.println("Didnt crash yet?");
+        Float[][] fMinMaxResult = flattenMinsMaxesForCUDA();
+        Float[][] fDataResult = flattenDataset();
+
+
+
+        //////////////////
+        float[] blockMins = new float[fMinMaxResult[0].length];
+        for(int i = 0; i < fMinMaxResult[0].length; i++){
+            blockMins[i] = fMinMaxResult[0][i];
+        }
+
+        float[] blockMaxes = new float[fMinMaxResult[1].length];
+        for(int i = 0; i < fMinMaxResult[1].length; i++){
+            blockMaxes[i] = fMinMaxResult[1][i];
+        }
+
+
+        int[] blockEdges = new int[fMinMaxResult[2].length];
+        for(int i = 0; i < fMinMaxResult[2].length; i++){
+            blockEdges[i] = fMinMaxResult[2][i].intValue();
+        }
+
+        float[] dataPointsArray = new float[fDataResult[0].length];
+        for(int i = 0; i < fDataResult[0].length; i++){
+            dataPointsArray[i] = fDataResult[0][i];
+        }
+
+        int numPoints = dataPointsArray.length / DV.fieldLength;
+
+        int[] dataPointBlocks = new int[numPoints];
+        int[] numPointsInBlocks = new int[hyper_blocks.size()];
+        /////////////////
+
+        // Make device pointers
+        CUdeviceptr d_dataPointsArray = CudaUtil.allocateAndCopy(dataPointsArray, Sizeof.FLOAT);
+        CUdeviceptr d_blockMins = CudaUtil.allocateAndCopy(blockMins, Sizeof.FLOAT);
+        CUdeviceptr d_blockMaxes = CudaUtil.allocateAndCopy(blockMaxes, Sizeof.FLOAT);
+        CUdeviceptr d_blockEdges = CudaUtil.allocateAndCopy(blockEdges, Sizeof.INT);
+        CUdeviceptr d_dataPointBlocks = CudaUtil.allocateAndCopy(dataPointBlocks, Sizeof.INT);
+        CUdeviceptr d_numPointsInBlocks = CudaUtil.allocateAndCopy(numPointsInBlocks, Sizeof.INT);
+
+
+        Pointer kernelParameters = Pointer.to(
+                Pointer.to(d_dataPointsArray),
+                Pointer.to(new int[]{DV.fieldLength}),
+                Pointer.to(new int[]{numPoints}),
+                Pointer.to(d_blockMins),
+                Pointer.to(d_blockMaxes),
+                Pointer.to(d_blockEdges),
+                Pointer.to(new int[]{hyper_blocks.size()}),
+                Pointer.to(d_dataPointBlocks),
+                Pointer.to(d_numPointsInBlocks)
+        );
+
+        //TODO: Implement me
+
+        int blockSize = Math.min(numPoints, 1024);
+        int gridSize = (int) Math.ceil((double) numPoints / blockSize);
+        // Launch the kernel
+        cuLaunchKernel(uselessBlockHelper,
+                gridSize, 1, 1,     // Grid size (in blocks)
+                blockSize, 1, 1,   // Block size (in threads)
+                0, null,                      // Shared memory size and stream
+                kernelParameters, null
+        );
+
+        cuCtxSynchronize();
+
+
+        // Read back in numPointsInBlocks
+        int byteC = numPointsInBlocks.length * Sizeof.INT;
+        cuMemcpyDtoH(Pointer.to(numPointsInBlocks), d_numPointsInBlocks, byteC);
+        cuMemFree(d_dataPointsArray);
+        cuMemFree(d_blockMins);
+        cuMemFree(d_blockEdges);
+        cuMemFree(d_blockMaxes);
+        cuMemFree(d_dataPointBlocks);
+        cuMemFree(d_numPointsInBlocks);
+
+        // Remove Blocks
+        for(int i = numPointsInBlocks.length - 1; i >= 0; i--){
+            if(numPointsInBlocks[i] == 0){
+                hyper_blocks.remove(i);
+            }
+        }
+
+        long endTime = System.currentTimeMillis();
+
+        long duration = endTime - startTime;
+
+        System.out.println("Time taken: " + duration + " ms");
+    }
     private void removeUselessAttributesCUDA(){
         // CUDA PLAN:
         // Keep two double arrays for mins and maxes for all blocks
@@ -577,7 +731,7 @@ public class HyperBlockGeneration
         // int[] classBorder: The borders of the points in the classes ex: [0, 20, 100] class 1 from 0-19, class 2 20-99
 
         // Initialize JCuda
-        JCudaDriver.setExceptionsEnabled(true);
+        setExceptionsEnabled(true);
         cuInit(0);
 
         // Create a context
@@ -592,20 +746,20 @@ public class HyperBlockGeneration
         CUfunction removeUselessHelper = new CUfunction();
         cuModuleGetFunction(removeUselessHelper, module1, "removeUselessHelper");
 
-        Double[][] fMinMaxResult = flatMinMaxNoEncode();
+        Float[][] fMinMaxResult = flatMinMaxNoEncode();
         //Double[][] fMinMaxResult = flattenMinsMaxesForCUDA();
-        Double[][] fDataResult = flattenDataset();
+        Float[][] fDataResult = flattenDataset();
 
 
         // Host variables
         float[] mins = new float[fMinMaxResult[0].length];
         for(int i = 0; i < fMinMaxResult[0].length; i++){
-            mins[i] = fMinMaxResult[0][i].floatValue();
+            mins[i] = fMinMaxResult[0][i];
         }
 
         float[] maxes = new float[fMinMaxResult[1].length];
         for(int i = 0; i < fMinMaxResult[1].length; i++){
-            maxes[i] = fMinMaxResult[1][i].floatValue();
+            maxes[i] = fMinMaxResult[1][i];
         }
 
         int minMaxLen = mins.length;
@@ -633,7 +787,7 @@ public class HyperBlockGeneration
         //TODO:
         float[] dataset = new float[fDataResult[0].length];
         for(int i = 0; i < fDataResult[0].length; i++){
-            dataset[i] = fDataResult[0][i].floatValue();
+            dataset[i] = fDataResult[0][i];
         }
 
         int numPoints = dataset.length / DV.fieldLength;
@@ -752,75 +906,80 @@ public class HyperBlockGeneration
      *  ex. [1, 1, 2, 1, 0]
      * Index 0 element says there is 1 min for the first attribute, then the index 2 element says there is 2 possible mins for the second attribute.
      */
-    private Double[][] flattenMinsMaxesForCUDA() {
+    private Float[][] flattenMinsMaxesForCUDA() {
 
-        ArrayList<Double> flatMinsList = new ArrayList<>();
-        ArrayList<Double> flatMaxesList = new ArrayList<>();
-        ArrayList<Double> blockEdges = new ArrayList<>();
-        Double[] blockClasses = new Double[hyper_blocks.size()];
+        ArrayList<Float> flatMinsList = new ArrayList<>();
+        ArrayList<Float> flatMaxesList = new ArrayList<>();
+        ArrayList<Float> blockEdges = new ArrayList<>();
+        Float[] blockClasses = new Float[hyper_blocks.size()];
 
         // First block starts at 0.
-        blockEdges.add(0.0);
+        blockEdges.add(0.0F);
 
         // go through and add all blocks mins and maxes list. along with adding in an int to tell how many numbers there are for that particular attribute
         for(int hb = 0; hb < hyper_blocks.size(); hb++) {
             HyperBlock block = hyper_blocks.get(hb);
-            blockClasses[hb] = (double) block.classNum;
+            blockClasses[hb] = (float) block.classNum;
 
             int blockLength = 0;
             // Go through each attribute of mins
             for (int m = 0; m < block.minimums.size(); m++) {
 
                 // Number of possible MIN/MAX ors for the attribute
-                double numIntervals = block.minimums.get(m).size();
+                float numIntervals = block.minimums.get(m).size();
 
                 // Add to block total size
                 blockLength += (int) numIntervals;
-                flatMinsList.add(numIntervals);
-                flatMinsList.addAll(block.minimums.get(m));
 
-                // DO FOR MAXES NOW!
+                flatMinsList.add(numIntervals);
                 flatMaxesList.add(numIntervals);
-                flatMaxesList.addAll(block.maximums.get(m));
+
+                for(int i = 0; i < block.minimums.get(m).size(); i++){
+                    flatMinsList.add(block.minimums.get(m).get(i).floatValue());
+                    flatMaxesList.add(block.maximums.get(m).get(i).floatValue());
+                }
+
             }
             // add this length to the last index, to tell where to find the next block
             blockEdges.add(blockLength + blockEdges.get(blockEdges.size() - 1) + DV.fieldLength);
         }
 
-        Double[] flatMinsArray = new Double[flatMinsList.size()];
-        Double[] flatMaxesArray = new Double[flatMaxesList.size()];
-        Double[] blockEdgesArray = new Double[blockEdges.size()];     // block edges array is going to have one more entry than necessary. the last block puts in it's ending index as well.
+        Float[] flatMinsArray = new Float[flatMinsList.size()];
+        Float[] flatMaxesArray = new Float[flatMaxesList.size()];
+        Float[] blockEdgesArray = new Float[blockEdges.size()];     // block edges array is going to have one more entry than necessary. the last block puts in it's ending index as well.
 
         flatMinsList.toArray(flatMinsArray);
         flatMaxesList.toArray(flatMaxesArray);
         blockEdges.toArray(blockEdgesArray);
 
         // Now return the arrays
-        return new Double[][] {flatMinsArray, flatMaxesArray, blockEdgesArray, blockClasses};
+        return new Float[][] {flatMinsArray, flatMaxesArray, blockEdgesArray, blockClasses};
     }
 
-    private Double[][] flatMinMaxNoEncode() {
+    //TODO: calculate how long the lists should be and move away from ArrayList<Double
+    private Float[][] flatMinMaxNoEncode() {
         int size = hyper_blocks.size();
-        ArrayList<Double> flatMinsList = new ArrayList<>();
-        ArrayList<Double> flatMaxesList = new ArrayList<>();
-        Double[] blockEdges = new Double[size + 1];
-        Double[] blockClasses = new Double[size];
-        Double[] intervalCounts = new Double[size * DV.fieldLength];
+
+        ArrayList<Float> flatMinsList = new ArrayList<>();
+        ArrayList<Float> flatMaxesList = new ArrayList<>();
+        Float[] blockEdges = new Float[size + 1];
+        Float[] blockClasses = new Float[size];
+        Float[] intervalCounts = new Float[size * DV.fieldLength];
 
         // First block starts at 0.
-        blockEdges[0] = 0.0;
+        blockEdges[0] = 0.0F;
         int idx = 0;
 
         // go through and add all blocks mins and maxes list. along with adding in an int to tell how many numbers there are for that particular attribute
         for(int hb = 0; hb < size; hb++) {
             HyperBlock block = hyper_blocks.get(hb);
-            blockClasses[hb] = (double) block.classNum;
+            blockClasses[hb] = (float) block.classNum;
             int length = 0;
             // Go through each attribute of mins
             for (int m = 0; m < block.minimums.size(); m++) {
 
                 // Number of possible MIN/MAX ors for the attribute
-                double numIntervals = block.minimums.get(m).size();
+                float numIntervals = block.minimums.get(m).size();
                 length += numIntervals;
                 // Add to block total size
                 //0 block 2 attribute
@@ -828,70 +987,43 @@ public class HyperBlockGeneration
                 idx++;
 
                 // Add all interval for current attribute.
-                flatMinsList.addAll(block.minimums.get(m));
-                flatMaxesList.addAll(block.maximums.get(m));
+                for(int i = 0; i < block.minimums.get(m).size(); i++){
+                    flatMinsList.add(block.minimums.get(m).get(i).floatValue());
+                    flatMaxesList.add(block.maximums.get(m).get(i).floatValue());
+                }
             }
             // add this length to the last index, to tell where to find the next block
             blockEdges[hb+1] = blockEdges[hb] + length;
         }
 
-        Double[] flatMinsArray = new Double[flatMinsList.size()];
-        Double[] flatMaxesArray = new Double[flatMaxesList.size()];
+        Float[] flatMinsArray = new Float[flatMinsList.size()];
+        Float[] flatMaxesArray = new Float[flatMaxesList.size()];
 
         flatMinsList.toArray(flatMinsArray);
         flatMaxesList.toArray(flatMaxesArray);
 
         // Now return the arrays
-        return new Double[][] {flatMinsArray, flatMaxesArray, blockEdges, blockClasses, intervalCounts};
+        return new Float[][] {flatMinsArray, flatMaxesArray, blockEdges, blockClasses, intervalCounts};
     }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    private Double[][] flattenDataset(){
-        ArrayList<Double> dataset = new ArrayList<>();
-        Double[] classBorder = new Double[DV.uniqueClasses.size() + 1];
-        classBorder[0] = 0.0;
+    private Float[][] flattenDataset(){
+        ArrayList<Float> dataset = new ArrayList<>();
+        Float[] classBorder = new Float[DV.uniqueClasses.size() + 1];
+        classBorder[0] = 0.0F;
 
         // add each point to the dataset list attribute by attribute
         for(int classN = 0; classN < data.size(); classN++) {
             // Exclusive end of class should be previous clas
-            classBorder[classN + 1] = (double) data.get(classN).data.length + classBorder[classN];
+            classBorder[classN + 1] = (float) data.get(classN).data.length + classBorder[classN];
             for(double[] point : data.get(classN).data)
                 for(double attribute : point)
-                    dataset.add(attribute);
+                    dataset.add((float)attribute);
         }
-
-        Double[] datasetArray = new Double[dataset.size()];
+        Float[] datasetArray = new Float[dataset.size()];
         dataset.toArray(datasetArray);
 
-        return new Double[][]{datasetArray, classBorder};
+        return new Float[][]{datasetArray, classBorder};
     }
 
         // removed represents one particular attribute which we want to try and remove
@@ -1027,7 +1159,6 @@ public class HyperBlockGeneration
 
             long endTime = System.currentTimeMillis();
             long executionTime = endTime - startTime;
-
             System.out.println("Parallelized Interval HB creation time: " + executionTime + " milliseconds");
 
             // add HBs and shutdown threads
@@ -1053,8 +1184,15 @@ public class HyperBlockGeneration
             for (int i = 0; i < data.size(); i++) {
                 for (int j = 0; j < data.get(i).data.length; j++) {
                     if (!skips.get(i).isEmpty()) {
-                        if (j != skips.get(i).get(0))
-                            seed_data.get(i).add(data.get(i).data[j]);
+                        if (j != skips.get(i).get(0)){
+                            double[] doubleRow = data.get(i).data[j];
+
+                            for (int m = 0; m< doubleRow.length; m++) {
+                                doubleRow[m] = (float) doubleRow[m];
+                            }
+
+                            seed_data.get(i).add(doubleRow);
+                        }
                         else
                             skips.get(i).remove(0);
                     } else
@@ -1076,7 +1214,9 @@ public class HyperBlockGeneration
 
         // now if we made it through that, we can simply try the cuda version, if we get an exception for no cuda, then we use the not cuda version
         try {
-            merger_cuda(datum, seed_data);
+            //TODO: You need to handle the case where skips data is empty. if it is you need to fill with the ALL data.
+
+            merger_cuda(seed_data, datum);
             order_hbs_by_class();
         }
         catch (InterruptedException | ExecutionException e) {
@@ -1409,7 +1549,7 @@ public class HyperBlockGeneration
         for (HyperBlock hb : existing_hb)
         {
             // if not unique, then return false
-            if (!(intv_max < hb.minimums.get(attr).get(0) || intv_min > hb.maximums.get(attr).get(0)))
+            if (!((float)intv_max < hb.minimums.get(attr).get(0).floatValue() || (float)intv_min > hb.maximums.get(attr).get(0).floatValue()))
             {
                 return false;
             }
@@ -2044,6 +2184,9 @@ public class HyperBlockGeneration
         // get classes to be graphed
         data = new ArrayList<>();
         data.addAll(DV.trainData);
+
+        testData = new ArrayList<>();
+        testData.addAll(DV.testData);
     }
     
     
@@ -2255,7 +2398,8 @@ public class HyperBlockGeneration
                 "Remove Useless Attributes",
                 "CUDA RUA",
                 "Create Disjunctive Blocks",
-                "Remove Useless Blocks",
+                "smashBlocks();",
+                "CUDA RUB",
                 "Expansion Algorithm" //Currently disabled until made interactive and ran by Dr. K
         });
         simplifications.addActionListener(e ->{
@@ -2263,7 +2407,11 @@ public class HyperBlockGeneration
             if (selected.equals("Remove Useless Attributes")) removeUselessAttributes();
             else if (selected.equals("CUDA RUA")) removeUselessAttributesCUDA();
             else if (selected.equals("Create Disjunctive Blocks")) simplifyHBtoDisjunctiveForm();
-            else if (selected.equals("Remove Useless Blocks")) removeUselessBlocks();
+            else if (selected.equals("smashBlocks();")) {
+                smashBlocks();
+                return;
+            }
+            else if (selected.equals("CUDA RUB")) removeUselessBlocksCuda();
             else if (selected.equals("Expansion Algorithm")){
                 expansionScroll.setVisible(true);
                 //attemptToExpandIntervals(.05, -1, false);
@@ -2434,8 +2582,15 @@ public class HyperBlockGeneration
         {
             case "PC" -> {
                 switch (selectedView) {
-                    case "Individual Hyperblocks" -> graphPanel.add(PC_HB(data, visualized_block));
-                    case "All Blocks" -> graphPanel.add(PC_HBs(data));
+                    case "Individual Hyperblocks" -> {
+                        System.out.println("Graphing only 1;");
+                        graphPanel.add(PC_HB(data, visualized_block));
+                    }
+
+                    case "All Blocks" -> {
+                        System.out.println("Graphing all;");
+                        graphPanel.add(PC_HBs(data));
+                    }
                     case "Class Combined Blocks" -> {
                         // Add your logic for class combined blocks here
                     }
@@ -2572,34 +2727,6 @@ public class HyperBlockGeneration
     }
 
     private void updateGraphs() {
-
-        /*
-
-        String selectedOption = (String) viewOptions.getSelectedItem();
-        switch (selectedOption) {
-            case "Individual Hyperblocks" -> {
-                // Equivalent to individualView.doClick();
-                individualViewAction();
-            }
-            case "All Blocks" -> {
-                // Equivalent to completeView.doClick();
-                completeViewAction();
-            }
-            case "Class Combined Blocks" -> {
-                // Equivalent to combinedClassView.doClick();
-                combinedClassViewAction();
-            }
-            default -> {
-                // Default case for Combined View
-                combinedViewAction();
-            }
-        }
-        */
-        // set left and right buttons
-        navPanel.removeAll();
-        navPanel.add(left);
-        navPanel.add(right);
-
         if (visualized_block > hyper_blocks.size() - 1)
             visualized_block = 0;
 
@@ -3622,9 +3749,10 @@ public class HyperBlockGeneration
                         avg[k] += hyper_blocks.get(h).hyper_block.get(q).get(j)[k];
                 }
 
-                for (int j = 0; j < hyper_blocks.get(h).hyper_block.get(q).get(0).length; j++)
-                    avg[j] /= hyper_blocks.get(h).hyper_block.get(q).size();
-
+                if(!hyper_blocks.get(h).hyper_block.get(q).isEmpty()) {
+                    for (int j = 0; j < hyper_blocks.get(h).hyper_block.get(q).get(0).length; j++)
+                        avg[j] /= hyper_blocks.get(h).hyper_block.get(q).size();
+                }
                 avg_cases.add(avg);
             }
 
@@ -3771,7 +3899,7 @@ public class HyperBlockGeneration
             // Go through all intervals the hyperblock allows for the attribute
             for(int j = 0; j < tempBlock.maximums.get(i).size(); j++){
                 // If the datapoints value falls inside one of the intervals.
-                if (data[i] >= tempBlock.minimums.get(i).get(j) && data[i] <= tempBlock.maximums.get(i).get(j)) {
+                if ((float)data[i] >= tempBlock.minimums.get(i).get(j).floatValue() && (float) data[i] <= tempBlock.maximums.get(i).get(j).floatValue()) {
                     inAnInterval = true;
                     break;
                 }
@@ -3802,7 +3930,7 @@ public class HyperBlockGeneration
             // Go through all intervals the hyperblock allows for the attribute
             for(int j = 0; j < maximums.get(i).size(); j++){
                 // If the datapoints value falls inside one of the intervals.
-                if (point[i] >= minimums.get(i).get(j) && point[i] <= maximums.get(i).get(j)) {
+                if ((float) point[i] >= minimums.get(i).get(j).floatValue() && (float) point[i] <= maximums.get(i).get(j).floatValue()) {
                     inAnInterval = true;
                     break;
                 }
@@ -4338,12 +4466,11 @@ public class HyperBlockGeneration
         hyper_blocks.addAll(blocks);
     }
 
-
-
-    private void merger_cuda(ArrayList<ArrayList<double[]>> data, ArrayList<ArrayList<double[]>> out_data) throws ExecutionException, InterruptedException
+    /////////////////////////////// Rework
+    private void merger_cuda(ArrayList<ArrayList<double[]>> data_with_skips, ArrayList<ArrayList<double[]>> all_data) throws ExecutionException, InterruptedException
     {
         // Initialize JCuda
-        JCudaDriver.setExceptionsEnabled(true);
+        setExceptionsEnabled(true);
         cuInit(0);
 
         // Create a context
@@ -4352,277 +4479,349 @@ public class HyperBlockGeneration
         CUcontext context = new CUcontext();
         cuCtxCreate(context, 0, device);
 
+        cudaDeviceProp prop = new cudaDeviceProp();
+        JCuda.cudaGetDeviceProperties(prop, 0);
+
+        int totalCores = CudaUtil.getNumberCudaCores(prop);
+        System.out.println("Total number of CUDA cores: " + totalCores);
+
         // Load the kernel
         CUmodule module1 = new CUmodule();
         cuModuleLoad(module1, ".\\src\\MergerHyperKernels.ptx");
         CUfunction mergerHelper1 = new CUfunction();
         cuModuleGetFunction(mergerHelper1, module1, "MergerHelper1");
 
-        // create hollow blocks from hyperblocks
-        ArrayList<HollowBlock> merging_hbs = new ArrayList<>();
-        for (HyperBlock hyperBlock : hyper_blocks)
-        {
-            double[] mins = new double[DV.fieldLength];
-            double[] maxes = new double[DV.fieldLength];
+        //(float *hyperBlockMins, float *hyperBlockMaxes, float *combinedMins, float *combinedMaxes, char *deleteFlags, int numAttributes, float *points, int numPoints, int numBlocks){
+        // Make device pointers
+        ArrayList<float[]> hyperBlockMins = new ArrayList<>();
+        ArrayList<float[]> hyperBlockMaxes = new ArrayList<>();
+        ArrayList<float[]> combinedMins = new ArrayList<>();
+        ArrayList<float[]> combinedMaxes = new ArrayList<>();
+        ArrayList<int[]> deleteFlags= new ArrayList<>();
+        ArrayList<float[]> points = new ArrayList<>();
 
-            for(int i = 0; i < hyperBlock.maximums.size(); i++){
-                mins[i] = hyperBlock.minimums.get(i).get(0);
-                maxes[i] = hyperBlock.maximums.get(i).get(0);
-            }
+        ArrayList<CUdeviceptr> hyperBlockMinsALL = new ArrayList<>();
+        ArrayList<CUdeviceptr> hyperBlockMaxesALL = new ArrayList<>();
+        ArrayList<CUdeviceptr> combinedMinsALL = new ArrayList<>();
+        ArrayList<CUdeviceptr> combinedMaxesALL = new ArrayList<>();
+        ArrayList<CUdeviceptr> deleteFlagsALL = new ArrayList<>();
+        ArrayList<CUdeviceptr> d_pointsALL = new ArrayList<>();
+        ArrayList<CUstream> streams = new ArrayList<>();
+        ArrayList<CUdeviceptr> d_usedFlagsALL = new ArrayList<>();
+        // Get how many points is in the dataset total.
+        int numPoints = all_data.stream().mapToInt(ArrayList::size).sum();
+        System.out.println("Num total points" + numPoints);
 
-            merging_hbs.add(new HollowBlock(Arrays.copyOf(maxes, maxes.length), Arrays.copyOf(mins, mins.length), hyperBlock.classNum));
+        // How many points are not in HBs
+        int nPointsNotInHBs =  data_with_skips.stream().mapToInt(ArrayList::size).sum();
+        System.out.println("nPointsNotInHBs" + nPointsNotInHBs);
+
+        int[] numBlocksOfEachClass = new int[DV.uniqueClasses.size()];
+        for(HyperBlock hb : hyper_blocks) {
+            numBlocksOfEachClass[hb.classNum]++;
         }
 
-        hyper_blocks.clear();
+        System.out.println("NumBlocks of each class: " + Arrays.toString(numBlocksOfEachClass));
+        // I want to go through and make the data that will be passed to each kernel.
+        // Each class will hopefully be its own kernel through the use of streams.
+        for(int classN = 0; classN < DV.uniqueClasses.size(); classN++){
+            // Total size of datapo array
+            int totalDataSetSizeFlat = numPoints * DV.fieldLength;
+            System.out.println("totalDataSetSizeFlat: " + totalDataSetSizeFlat);
 
-        // create seed hollow blocks
-        for (int i = 0; i < out_data.size(); i++)
-        {
-            for (int j = 0; j < out_data.get(i).size(); j++)
-                merging_hbs.add(new HollowBlock(out_data.get(i).get(j), out_data.get(i).get(j), i));
+            // Size once added blocks points are taken away
+            System.out.println("All data of class " + classN + ": " + all_data.get(classN).size());
+            System.out.println("Skip data of class " + classN + ": " + data_with_skips.get(classN).size());
+            int sizeWithoutHBpoints = ((data_with_skips.get(classN).size() + numBlocksOfEachClass[classN]) * DV.fieldLength);
+            if(data_with_skips.get(classN).isEmpty()){
+                sizeWithoutHBpoints = numBlocksOfEachClass[classN] * DV.fieldLength;
+            }
+
+            System.out.println("sizeWithoutHBpoints: " + sizeWithoutHBpoints);
+
+            // Will have existing blocks and rest of points of same class
+            float[] hyperBlockMinsC = new float[sizeWithoutHBpoints];
+            float[] hyperBlockMaxesC = new float[sizeWithoutHBpoints];
+            float[] combinedMinsC = new float[sizeWithoutHBpoints];
+            float[] combinedMaxesC = new float[sizeWithoutHBpoints];
+
+            // A flag for each block of this class
+            int[] deleteFlagsC = new int[sizeWithoutHBpoints / DV.fieldLength];
+            System.out.println("deleteFlags size:" + deleteFlagsC.length);
+            int nSize = all_data.get(classN).size();
+            // Will have flattened points from all other classes.
+            float[] pointsC = new float[totalDataSetSizeFlat - (nSize * DV.fieldLength)];
+            System.out.println("pointsC size:" + (totalDataSetSizeFlat - (nSize * DV.fieldLength)));
+
+            int currentClassIndex = 0;
+            // Iterate through all classes
+            // Build the mins/maxes with the points that ARENT in the blocks for this class already.
+            for (int currentClass = 0; currentClass < data_with_skips.size(); currentClass++) {
+                for (double[] point : data_with_skips.get(currentClass)) {
+                    if (currentClass == classN) {
+                        // Add points to hyperBlockMinsC and hyperBlockMaxesC for the current class
+                        for (double val : point) {
+                            hyperBlockMinsC[currentClassIndex] = (float) val;
+                            hyperBlockMaxesC[currentClassIndex] = (float) val;
+                            currentClassIndex++;
+                        }
+                    }
+                }
+            }
+
+            int otherClassIndex = 0;
+            // Points from other classes should INCLUDE the points that were in other classes blocks
+            // since we are using to check purity.
+            for (int currentClass = 0; currentClass < all_data.size(); currentClass++) {
+                if(currentClass == classN){
+                    continue;
+                }
+
+                for (double[] point : all_data.get(currentClass)) {
+                    // Add points to hyperBlockMinsC and hyperBlockMaxesC for the current class
+                    // Add points to pointsC for other classes
+                    for (double val : point) {
+                        pointsC[otherClassIndex] = (float) val;
+                        //System.out.println("index: " + otherClassIndex);
+                        otherClassIndex++;
+                    }
+                }
+            }
+
+            // add our pre made blocks to the list of blocks. After this we add all our points of this particular class, as their own blocks as well.
+            for(int hb = hyper_blocks.size() - 1; hb >= 0; hb--){
+                HyperBlock h = hyper_blocks.get(hb);
+
+                // if this block isn't the class we are working with just skip.
+                if(h.classNum != classN){
+                    continue;
+                }
+
+                // copy this block's intervals into the array of intervals.
+                for(int i = 0; i < h.minimums.size(); i++){
+                    hyperBlockMinsC[currentClassIndex] = h.minimums.get(i).get(0).floatValue();
+                    hyperBlockMaxesC[currentClassIndex] = h.maximums.get(i).get(0).floatValue();
+                    currentClassIndex++;
+                }
+                // remove this block from the list.
+                hyper_blocks.remove(hb);
+            }
+
+
+            hyperBlockMins.add(hyperBlockMinsC);
+            hyperBlockMaxes.add(hyperBlockMaxesC);
+            combinedMins.add(combinedMinsC);
+            combinedMaxes.add(combinedMaxesC);
+            deleteFlags.add(deleteFlagsC);
+            points.add(pointsC);
+
+            // Fill up arraylist of device pointers.
+            hyperBlockMinsALL.add(CudaUtil.allocateAndCopy(hyperBlockMinsC, Sizeof.FLOAT));
+            hyperBlockMaxesALL.add(CudaUtil.allocateAndCopy(hyperBlockMaxesC, Sizeof.FLOAT));
+            combinedMinsALL.add(CudaUtil.allocateAndCopy(combinedMinsC, Sizeof.FLOAT));
+            combinedMaxesALL.add(CudaUtil.allocateAndCopy(combinedMaxesC, Sizeof.FLOAT));
+            deleteFlagsALL.add(CudaUtil.allocateAndCopy(deleteFlagsC, Sizeof.INT));
+            d_pointsALL.add(CudaUtil.allocateAndCopy(pointsC, Sizeof.FLOAT));
+            int numBlocks = hyperBlockMins.get(classN).length / DV.fieldLength;
+            d_usedFlagsALL.add(CudaUtil.allocateAndCopy(new int[numBlocks], Sizeof.INT));
+
+            CUstream stream = new CUstream(); // Make a stream for each class
+            cuStreamCreate(stream, CUstream_flags.CU_STREAM_DEFAULT);
+            streams.add(stream);
+            System.out.println("\n\n\n");
         }
 
-        boolean actionTaken = false;
-        int cnt = merging_hbs.size();
 
-        int time_cnt = 0;
-        int total_time = 0;
+        // Launch a kernel for each class.
+        for (int classN = 0; classN < DV.uniqueClasses.size(); classN++) {
+            CUstream stream = streams.get(classN);
+            CUdeviceptr d_hyperBlockMins = hyperBlockMinsALL.get(classN);
+            CUdeviceptr d_hyperBlockMaxes = hyperBlockMaxesALL.get(classN);
+            CUdeviceptr d_combinedMins = combinedMinsALL.get(classN);
+            CUdeviceptr d_combinedMaxes = combinedMaxesALL.get(classN);
+            CUdeviceptr d_deleteFlags = deleteFlagsALL.get(classN);
 
+            CUdeviceptr d_points = d_pointsALL.get(classN);
 
-        do
-        {
-            if (actionTaken || cnt < 1)
-                cnt = merging_hbs.size();
+            int otherCPointsNum = points.get(classN).length / DV.fieldLength;
+            int numBlocks = hyperBlockMins.get(classN).length / DV.fieldLength;
 
-            actionTaken = false;
+            CUdeviceptr d_mergable = CudaUtil.allocateAndCopy(new int[numBlocks], Sizeof.INT);
+            int[] seedQueue = new int[numBlocks];
+            for (int i = 0; i < numBlocks; i++) {
+                seedQueue[i] = i;
+            }
 
-            if (merging_hbs.isEmpty())
-                break;
+            CUdeviceptr d_seedQueue = CudaUtil.allocateAndCopy(seedQueue, Sizeof.INT);
+            CUdeviceptr d_writeSeedQueue = CudaUtil.allocateAndCopy(seedQueue, Sizeof.INT);
+            System.out.println("LAUNCHING A KERNEL");
+            System.out.println("Num other class points:" + otherCPointsNum);
+            System.out.println("Num blocks:" + numBlocks);
 
-            int seedNum = -1;
-            for (int i = 0; i < merging_hbs.size(); i++)
-            {
-                if (merging_hbs.get(i).mergable)
-                {
-                    seedNum = i;
-                    break;
+            CUdeviceptr blockSync = CudaUtil.allocateAndCopy(new int[1], Sizeof.INT);
+
+            int blockSize = 1024; // number of threads
+            int gridSize = Math.floorDiv(totalCores, blockSize);
+            if(numBlocks < 1024){
+                blockSize = 0;
+                while(blockSize < numBlocks){
+                    blockSize+= 32;
                 }
             }
 
-            if (seedNum == -1)
-                break;
+            blockSize = 64;
+            gridSize = 22;
+            int totalThreadsLaunched = blockSize * gridSize;
 
-            HollowBlock seed_hb = merging_hbs.get(seedNum);
-            merging_hbs.remove(seedNum);
+            System.out.println("Number blocks launched: " + gridSize);
 
-            long startTime = System.currentTimeMillis();
-
-
-            /***
-             * MAKE PARALLEL
-             */
-
-            // Allocate device memory
-            int numBlocks = merging_hbs.size();
-            int fieldLength_dblBytes = DV.fieldLength * Double.BYTES;
-            long hb_fieldLength_dblBytes = (long) numBlocks * fieldLength_dblBytes;
-
-            CUdeviceptr seedHBMax = new CUdeviceptr();
-            cuMemAlloc(seedHBMax, fieldLength_dblBytes);
-            CUdeviceptr seedHBMin = new CUdeviceptr();
-            cuMemAlloc(seedHBMin, fieldLength_dblBytes);
-
-            CUdeviceptr mergingHBMaxes = new CUdeviceptr();
-            cuMemAlloc(mergingHBMaxes, hb_fieldLength_dblBytes);
-            CUdeviceptr mergingHBMins = new CUdeviceptr();
-            cuMemAlloc(mergingHBMins, hb_fieldLength_dblBytes);
-
-            CUdeviceptr combinedMax = new CUdeviceptr();
-            cuMemAlloc(combinedMax, hb_fieldLength_dblBytes);
-            CUdeviceptr combinedMin = new CUdeviceptr();
-            cuMemAlloc(combinedMin, hb_fieldLength_dblBytes);
-
-            int numOpClassPnts = 0;
-            for (int i = 0; i < data.size(); i++)
-            {
-                if (seed_hb.classNum != i)
-                    numOpClassPnts += data.get(i).size();
-            }
-
-            int[] host_toBeDeleted = new int[numBlocks];
-
-            long numOpClassPnts_dblBytes = (long) numOpClassPnts * fieldLength_dblBytes;
-            long numBlock_intBytes = (long) numBlocks * Integer.BYTES;
-
-            CUdeviceptr oppClassPnts = new CUdeviceptr();
-            cuMemAlloc(oppClassPnts, numOpClassPnts_dblBytes);
-            CUdeviceptr toBeDeleted = new CUdeviceptr();
-            cuMemAlloc(toBeDeleted, numBlock_intBytes);
-
-            // Copy matrices A and B from host to device
-            cuMemcpyHtoD(seedHBMax, Pointer.to(seed_hb.maximums), fieldLength_dblBytes);
-            cuMemcpyHtoD(seedHBMin, Pointer.to(seed_hb.minimums), fieldLength_dblBytes);
-
-            double[] host_mergingHBMaxes = new double[numBlocks * DV.fieldLength];
-            double[] host_mergingHBMins = new double[numBlocks * DV.fieldLength];
-            for (int i = 0; i < numBlocks; i++)
-            {
-                for (int j = 0; j < DV.fieldLength; j++)
-                {
-                    host_mergingHBMaxes[i * DV.fieldLength + j] = merging_hbs.get(i).maximums[j];
-                    host_mergingHBMins[i * DV.fieldLength + j] = merging_hbs.get(i).minimums[j];
-                }
-            }
-
-            cuMemcpyHtoD(mergingHBMaxes, Pointer.to(host_mergingHBMaxes), hb_fieldLength_dblBytes);
-            cuMemcpyHtoD(mergingHBMins, Pointer.to(host_mergingHBMins), hb_fieldLength_dblBytes);
-
-            double[] host_oppClassPnts = new double[numOpClassPnts * DV.fieldLength];
-            for (int i = 0, k = 0; i < data.size(); i++)
-            {
-                if (seed_hb.classNum != i)
-                {
-                    for (int j = 0; j < data.get(i).size(); j++, k++)
-                        System.arraycopy(data.get(i).get(j), 0, host_oppClassPnts, k * DV.fieldLength, DV.fieldLength);
-                }
-            }
-
-            cuMemcpyHtoD(oppClassPnts, Pointer.to(host_oppClassPnts), numOpClassPnts_dblBytes);
-
-            // Set up kernel parameters: pointers to matrix A, matrices B, result matrices, dimensions, and numMatrices
-            Pointer kernelParameters = Pointer.to(
-                    Pointer.to(seedHBMax),
-                    Pointer.to(seedHBMin),
-                    Pointer.to(mergingHBMaxes),
-                    Pointer.to(mergingHBMins),
-                    Pointer.to(combinedMax),
-                    Pointer.to(combinedMin),
-                    Pointer.to(oppClassPnts),
-                    Pointer.to(toBeDeleted),
+            System.out.println("Block size: " + blockSize);
+            System.out.println("Grid size: " + gridSize);
+            Pointer kernelParams = Pointer.to(
+                    Pointer.to(d_hyperBlockMins),
+                    Pointer.to(d_hyperBlockMaxes),
+                    Pointer.to(d_combinedMins),
+                    Pointer.to(d_combinedMaxes),
+                    Pointer.to(d_deleteFlags),
+                    Pointer.to(d_mergable),
                     Pointer.to(new int[]{DV.fieldLength}),
+                    Pointer.to(d_points),
+                    Pointer.to(new int[]{otherCPointsNum}),
                     Pointer.to(new int[]{numBlocks}),
-                    Pointer.to(new int[]{numOpClassPnts * DV.fieldLength})
+                    Pointer.to(d_seedQueue),                // The seed queue
+                    Pointer.to(d_usedFlagsALL.get(classN)), // DEBUG USED FLAGS, IF NOTICE THIS AFTER COMPLETE, REMOVE
+                    Pointer.to(blockSync),
+                    Pointer.to(new int[]{totalThreadsLaunched}),  // threadCount
+                    Pointer.to(d_writeSeedQueue)
             );
 
-            // Configure the kernel execution parameters
-            int blockSize = 256;  // Thread block size
-            int gridSize = merging_hbs.size() / blockSize + 1;
-
-            // Launch the kernel
-            cuLaunchKernel(mergerHelper1,
-                    gridSize, 1, 1,    // Grid size (in blocks)
-                    blockSize, 1, 1,  // Block size (in threads)
-                    0, null,                    // Shared memory size and stream
-                    kernelParameters, null      // Kernel parameters
+            int sharedMem = 2 * DV.fieldLength * Sizeof.FLOAT + Sizeof.INT;
+            cuLaunchCooperativeKernel(mergerHelper1,
+                    gridSize, 1, 1,
+                    blockSize, 1, 1,
+                    sharedMem, null,
+                    kernelParams
             );
             cuCtxSynchronize();
+            // Launch the kernel for the current class using the corresponding stream
+        }
 
-            // Copy result matrices C from device to host
-            cuMemcpyDtoH(Pointer.to(host_toBeDeleted), toBeDeleted, numBlock_intBytes);
 
-            // wait for results then check if any action was taken
-            for (int toDo : host_toBeDeleted)
-            {
-                if (toDo == 1)
-                {
-                    actionTaken = true;
+        //for (CUstream stream : streams) cuStreamSynchronize(stream);
+        //cuCtxSynchronize();
+
+
+        for (int classN = 0; classN < DV.uniqueClasses.size(); classN++) {
+            float[] resultMins = new float[hyperBlockMins.get(classN).length];
+            float[] resultMaxes = new float[hyperBlockMaxes.get(classN).length];
+            int[] deleteFlag = new int[deleteFlags.get(classN).length];
+            int[] usedFlags = new int[deleteFlags.get(classN).length];
+
+            System.out.println("Delete flags when copying back size: " + deleteFlag.length);
+
+            cuMemcpyDtoH(Pointer.to(resultMins), hyperBlockMinsALL.get(classN), (long) resultMins.length * Sizeof.FLOAT);
+            cuMemcpyDtoH(Pointer.to(resultMaxes), hyperBlockMaxesALL.get(classN), (long) resultMaxes.length * Sizeof.FLOAT);
+            cuMemcpyDtoH(Pointer.to(deleteFlag), deleteFlagsALL.get(classN), (long) deleteFlag.length * Sizeof.INT);
+            cuMemcpyDtoH(Pointer.to(usedFlags), d_usedFlagsALL.get(classN), (long) deleteFlag.length * Sizeof.INT);
+            System.out.println("Delete Flags" + Arrays.toString(deleteFlag));
+            System.out.println("Used Flags:" + Arrays.toString(usedFlags));
+            // Go through the results and make a new block every DV.FieldLen
+            for(int i = 0; i < resultMins.length; i += DV.fieldLength){
+                if(deleteFlag[i / DV.fieldLength] == -1){
+                    continue;
+                }
+                ArrayList<ArrayList<Double>> blockMins = new ArrayList<>();
+                ArrayList<ArrayList<Double>> blockMaxes = new ArrayList<>();
+
+                for(int j = 0; j < DV.fieldLength; j++){
+                    ArrayList<Double> innerMin = new ArrayList<>();
+                    ArrayList<Double> innerMax = new ArrayList<>();
+
+                    innerMin.add((double) resultMins[i + j]);
+                    innerMax.add((double) resultMaxes[i + j]);
+
+                    blockMins.add(innerMin);
+                    blockMaxes.add(innerMax);
+
+                }
+                hyper_blocks.add(new HyperBlock(blockMaxes, blockMins, classN));
+            }
+        }
+        for (CUdeviceptr ptr : hyperBlockMinsALL) cuMemFree(ptr);
+        for (CUdeviceptr ptr : hyperBlockMaxesALL) cuMemFree(ptr);
+        for (CUdeviceptr ptr : combinedMinsALL) cuMemFree(ptr);
+        for (CUdeviceptr ptr : combinedMaxesALL) cuMemFree(ptr);
+        for (CUdeviceptr ptr : deleteFlagsALL) cuMemFree(ptr);
+        for (CUdeviceptr ptr : d_pointsALL) cuMemFree(ptr);
+        for(CUdeviceptr ptr : d_usedFlagsALL) cuMemFree(ptr);
+        for (CUstream stream : streams) cuStreamDestroy(stream);
+        cuCtxDestroy(context);
+    }
+
+
+    ///////////////////////////////////////////////////
+    private void smashBlocks(){
+        Scanner scan = new Scanner(System.in);
+
+        System.out.println("Please enter hb1: ");
+        int hb1 = scan.nextInt();
+
+        System.out.println("Please enter hb2: ");
+        int hb2 = scan.nextInt();
+
+        HyperBlock block1 = hyper_blocks.get(hb1);
+        HyperBlock block2 = hyper_blocks.get(hb2);
+
+        System.out.println("OLD MINS HB1: " + block1.minimums);
+        System.out.println("OLD MAXES HB1: " + block1.maximums);
+        System.out.println("OLD MINS HB2: " + block2.minimums);
+        System.out.println("OLD MAXES HB2: " + block2.maximums);
+
+        // Create the MEGA BLOCK!!!!!!!
+        for(int k = 0; k < DV.fieldLength; k++){
+            double newMin = Math.min(block1.minimums.get(k).get(0), block2.minimums.get(k).get(0));
+            double newMax = Math.max(block1.maximums.get(k).get(0), block2.maximums.get(k).get(0));
+
+            block1.minimums.get(k).set(0,  newMin);
+            block1.maximums.get(k).set(0, newMax);
+        }
+
+        System.out.println("NEW MINS: " + block1.minimums);
+        System.out.println("NEW MAXES: " + block1.maximums);
+
+        // Go through all the data of other classes, check if it would fall into the new bounds of merged disjunctive block.
+        int classNum = block1.classNum;
+        boolean doMerge = true;
+        for(int k = 0; k < data.size(); k++) {
+
+            // skip data of same class
+            if(classNum == k){
+                continue;
+            }
+
+            for (double[] point : data.get(k).data) {
+                // Check if the point is within the MEGA BLOCK
+                if(inside_HB(hb1, point)){
+                    doMerge = false;
                     break;
                 }
             }
 
-            // Clean up memory
-            cuMemFree(seedHBMax);
-            cuMemFree(seedHBMin);
-            cuMemFree(mergingHBMaxes);
-            cuMemFree(mergingHBMins);
-            cuMemFree(combinedMax);
-            cuMemFree(combinedMin);
-            cuMemFree(oppClassPnts);
-            cuMemFree(toBeDeleted);
-
-            /***
-             * MAKE PARALLEL
-             */
-
-
-
-            long endTime = System.currentTimeMillis();
-            long executionTime = endTime - startTime;
-
-
-
-            // delete hyperblocks in reverse
-            // and add successfully combined hyperblocks
-            ArrayList<HollowBlock> addHbs = new ArrayList<>();
-            for (int i = host_toBeDeleted.length - 1; i >= 0; i--)
-            {
-                if (host_toBeDeleted[i] == 1)
-                {
-                    double[] maxPoint = new double[DV.fieldLength];
-                    double[] minPoint = new double[DV.fieldLength];
-
-                    // define combined space
-                    for (int j = 0; j < DV.fieldLength; j++)
-                    {
-                        maxPoint[j] = Math.max(seed_hb.maximums[j], merging_hbs.get(i).maximums[j]);
-                        minPoint[j] = Math.min(seed_hb.minimums[j], merging_hbs.get(i).minimums[j]);
-                    }
-
-                    HollowBlock hb = new HollowBlock(maxPoint, minPoint, seed_hb.classNum);
-
-                    // remove old and add new
-                    merging_hbs.remove(i);
-                    addHbs.add(hb);
-                }
-            }
-
-            merging_hbs.addAll(addHbs);
-
-            if (!actionTaken)
-            {
-                seed_hb.mergable = false;
-                merging_hbs.add(seed_hb);
-            }
-
-            //System.out.println("Cnt: " + cnt);
-            //System.out.println("HB num: " + merging_hbs.size());
-            //System.out.println("Seed HB Cls: " + seed_hb.classNum);
-            //System.out.println("Check time: " + executionTime + " milliseconds");
-
-            time_cnt++;
-            total_time += executionTime;
-
-            cnt--;
-
-        } while (actionTaken || cnt > 0);
-
-
-        //System.out.println("Average time: " + total_time / time_cnt + " milliseconds");
-
-        //TODO:AUSTIN: MAKE SURE THIS IS A DEEP COPY
-        // Create hyperblocks from merging blocks
-        for (HollowBlock mergingHb : merging_hbs) {
-            ArrayList<ArrayList<Double>> mins = new ArrayList<>();
-            ArrayList<ArrayList<Double>> maxes = new ArrayList<>();
-
-            for (int i = 0; i < mergingHb.minimums.length; i++) {
-                // Convert each minimum and maximum into an ArrayList<Double>
-                ArrayList<Double> minList = new ArrayList<>();
-                ArrayList<Double> maxList = new ArrayList<>();
-
-                minList.add(mergingHb.minimums[i]);
-                maxList.add(mergingHb.maximums[i]);
-
-                mins.add(minList);
-                maxes.add(maxList);
-            }
-
-            // Add them to the list of blocks
-            hyper_blocks.add(new HyperBlock(new ArrayList<>(maxes), new ArrayList<>(mins), mergingHb.classNum));
+            if(!doMerge){break;}
         }
 
-        cuCtxDestroy(context);
+        if(doMerge) {
+            // Create deep copies of mins and maxes
+            System.out.println("We can merge the specified blocks");
+        }
+        else{
+            System.out.println("The blocks are not mergable");
+        }
     }
+
+
+
+
 
     private void merger_cuda_helper(int n, double[] seedHBMax, double[] seedHBMin, double[] mergingHBMaxes, double[] mergingHBMins, double[] combinedMax, double[] combinedMin, double[] opClassPnts, int[] toBeDeleted, int numDims, int numMergingHBs, int cases)
     {

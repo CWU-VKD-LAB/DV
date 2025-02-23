@@ -1,42 +1,137 @@
+#include <cooperative_groups.h>
+namespace cg = cooperative_groups;
 extern "C"
 
 #define max(a, b) (a > b)? a: b
 #define min(a, b) (a > b)? b: a
 
+// our basic procedure is this. start with block 0 as a seed. try and merge all the other guys to block 0. if anyone does, then we can mark 0 for deletion.
+// iterate to the next one, merging the blocks to that one and so on.
+// we have only passed in countercases, not cases of our own class, all the blocks we are testing are also already the same class.
+// may need some changing around, when we test with a dataset over 2000 ish attributes we can't use shared memory to store the seedblock attributes, so we just will use global if such a thing happens.
+__global__ void MergerHelper1(float *hyperBlockMins, float *hyperBlockMaxes, float *combinedMins, float *combinedMaxes, int *deleteFlags, int *mergable, const int numAttributes, float *points, const int numPoints, const int numBlocks, int* readSeedQueue, int* usedFlagsDebugOnly, int* blockSync, int totalThreadCnt, int* writeSeedQueue){
 
-__global__ void MergerHelper1(double *seedHBMax, double *seedHBMin, double *mergingHBMaxes, double *mergingHBMins, double *combinedMax, double *combinedMin, double *opClassPnts, int *toBeDeleted, int numDims, int numMergingHBs, int cases)
-{
-    int n = blockIdx.x * blockDim.x + threadIdx.x;
-    if (n < numMergingHBs)
-    {
-        int offset = n * numDims;
-        for (int i = 0; i < numDims; i++)
-        {
-            combinedMax[i+offset] = max(seedHBMax[i], mergingHBMaxes[i+offset]);
-            combinedMin[i+offset] = min(seedHBMin[i], mergingHBMins[i+offset]);
+    extern __shared__ float seedBlockAttributes[];
+    cg::grid_group grid = cg::this_grid();
+
+    // stored in the same array, but using two pointers we can make this easy.
+    float *seedBlockMins = &seedBlockAttributes[0];
+    float *seedBlockMaxes = &seedBlockAttributes[numAttributes];
+
+    int threadID = blockIdx.x * blockDim.x + threadIdx.x;
+
+    float *thisBlockCombinedMins = &combinedMins[threadID * numAttributes];
+    float *thisBlockCombinedMaxes = &combinedMaxes[threadID * numAttributes];
+
+    for(int deadSeedNum = 0; deadSeedNum < numBlocks; deadSeedNum++){
+
+        if(deadSeedNum > 0){
+            int* tmp = readSeedQueue;
+            readSeedQueue = writeSeedQueue;
+            writeSeedQueue = tmp;
         }
 
-        // 1 = do merge, 0 = do not merge
-        int merge = 1;
-        for (int i = 0; i < cases; i += numDims)
-        {
-            bool withinSpace = true;
-            for (int j = 0; j < numDims; j++)
-            {
-                if (!(opClassPnts[i+j] <= combinedMax[j+offset] && opClassPnts[i+j] >= combinedMin[j+offset]))
-                {
-                    withinSpace = false;
-                    break;
+        // This is the thing with accessing the right block from the queue.
+        int seedBlock = readSeedQueue[deadSeedNum];
+
+        //if(threadID == 0){usedFlagsDebugOnly[seedBlock]++;} //DEBUG
+
+        // copy the seed blocks attributes into shared memory, so that we can load stuff much faster.block Dim is how many threads in a block. since each block has it's own shared memory, this is our offset for copying stuff over. this is needed becausewe could have more than 1024 attributes very easily.
+        for (int index = threadIdx.x; index < numAttributes; index += blockDim.x){
+            seedBlockMins[index] = hyperBlockMins[seedBlock * numAttributes + index];
+            seedBlockMaxes[index] = hyperBlockMaxes[seedBlock * numAttributes + index];
+        }
+        // sync when we're done copying over the seedblock values.
+        grid.sync();
+
+        int k = threadID;
+        while(k < numBlocks){
+
+            // make the combined mins and maxes, and then check against all our data.
+            if (k < numBlocks && k != seedBlock && deleteFlags[k] != -1 ){
+
+                // first we build our combined list.
+                for (int i = 0; i < numAttributes; i++){
+                    thisBlockCombinedMaxes[i] = max(seedBlockMaxes[i], hyperBlockMaxes[k * numAttributes + i]);
+                    thisBlockCombinedMins[i] = min(seedBlockMins[i], hyperBlockMins[k  * numAttributes + i]);
+                }
+
+                // now we check all our data for a point falling into our new bounds.
+                char allPassed = 1;
+                for (int point = 0; point < numPoints; point++){
+
+                    char someAttributeOutside = 0;
+                    for(int att = 0; att < numAttributes; att++){
+                        if (points[point * numAttributes + att] > thisBlockCombinedMaxes[att] || points[point * numAttributes + att] < thisBlockCombinedMins[att]){
+                            someAttributeOutside = 1;
+                            break;
+                        }
+                    }
+                    // if there's NOT some attribute outside, this point has fallen in, and we can't do the merge.
+                    if (!someAttributeOutside){
+                        allPassed = 0;
+                        break;
+                    }
+                }
+                // if we did pass all the points, that means we can merge, and we can set the updated mins and maxes for this point to be the combined attributes instead.
+                // then we simply flag that seedBlock is trash.
+                if (allPassed){
+                    // copy the combined mins and maxes into the original array
+                    for (int i = 0; i < numAttributes; i++){
+                        hyperBlockMins[k * numAttributes + i] = thisBlockCombinedMins[i];
+                        hyperBlockMaxes[k * numAttributes + i] = thisBlockCombinedMaxes[i];
+                    }
+                    // set the flag to -1. atomic because many threads will try this.
+
+                    atomicMin(&deleteFlags[seedBlock], -1);
+                    mergable[k] = 1;
                 }
             }
 
-            if (withinSpace)
-            {
-                merge = 0;
-                break;
-            }
+            // Move the threads to their new HyperBlock
+            k += totalThreadCnt;
         }
 
-        toBeDeleted[n] = merge;
+        grid.sync();
+
+        k = threadID;
+        while(k < numBlocks){
+            if(k > deadSeedNum){
+                // Redo the order of the non-existent queue readSeedQueue
+                int blockNum = readSeedQueue[k];
+                int cnt = 0;
+
+                if(mergable[blockNum] == 1){
+                    // Count how many 1's are to the left of me, put self
+                    for(int i = k - 1; i > deadSeedNum; i--){ // K should work, since it will have been at the k spot when thread read.
+                        if(mergable[readSeedQueue[i]] == 1){
+                            cnt++;
+                        }
+                    }
+                    writeSeedQueue[numBlocks - 1 - cnt] = blockNum;
+                }
+                else{
+                   cnt += deadSeedNum + 1;
+                   // count all non-1's to the left, then put self in deadSeedNum + count
+                   for(int i = k - 1; i > deadSeedNum; i--){
+                        if(mergable[readSeedQueue[i]] == 0){
+                            cnt++;
+                        }
+                   }
+                   writeSeedQueue[cnt] = blockNum;
+                }
+            }
+            k += totalThreadCnt;
+        }
+
+        // once the queues are rearranged, we sync and reset the mergable flags.
+        grid.sync();
+
+        //RESET THE MERGING FLAGS FOR NEXT ITERATION
+        k = threadID;
+        while(k < numBlocks){
+            mergable[k] = 0;
+            k += totalThreadCnt;
+        }
     }
 }

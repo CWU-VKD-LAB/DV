@@ -907,55 +907,45 @@ public class DV extends JFrame
         JLabel splitLabel = new JLabel("Data split ratio of training and testing data.");
         splitLabel.setFont(splitLabel.getFont().deriveFont(14f));
 
-        JLabel trainSplit = new JLabel("Train Split");
-        JTextField trainText = new JTextField(6);
-        trainText.setToolTipText("Percent of data used for training");
-        trainText.setFont(trainText.getFont().deriveFont(12f));
-        trainText.setText(Double.toString(DV.trainSplit));
+        // Create SpinnerNumberModels for train and test split
+        SpinnerNumberModel trainModel = new SpinnerNumberModel(1.0, 0.0, 1.0, 0.1);
+        SpinnerNumberModel testModel = new SpinnerNumberModel(0.0, 0.0, 1.0, 0.1);
 
-        JPanel training = new JPanel();
-        training.add(trainSplit);
-        training.add(trainText);
+        // Create the JSpinners with these models
+        JSpinner trainSpinner = new JSpinner(trainModel);
+        JSpinner testSpinner = new JSpinner(testModel);
 
-        JLabel testSplit = new JLabel("Test Split");
-        JTextField testText = new JTextField(6);
-        testText.setToolTipText("Percent of data used for testing");
-        testText.setFont(testText.getFont().deriveFont(12f));
-        testText.setText(Double.toString(DV.testSplit));
+        trainSpinner.setPreferredSize(new Dimension(80, trainSpinner.getPreferredSize().height));
+        testSpinner.setPreferredSize(new Dimension(80, testSpinner.getPreferredSize().height));
 
-        trainText.addActionListener(e ->
-        {
-            double percent = Double.parseDouble(trainText.getText());
-
-            if (0 < percent && percent <= 1)
-            {
+        trainSpinner.addChangeListener(e -> {
+            double percent = (double) trainSpinner.getValue();
+            if (0 < percent && percent <= 1) {
                 DV.trainSplit = percent;
                 DV.testSplit = 1 - percent;
-
-                testText.setText(Double.toString(DV.testSplit));
+                testSpinner.setValue(DV.testSplit); // Sync test spinner with train spinner
             }
-            else
-                trainText.setText("INVALID");
         });
 
-        testText.addActionListener(e ->
-        {
-            double percent = Double.parseDouble(testText.getText());
-
-            if (0 <= percent && percent < 1)
-            {
+        testSpinner.addChangeListener(e -> {
+            double percent = (double) testSpinner.getValue();
+            if (0 <= percent && percent < 1) {
                 DV.testSplit = percent;
                 DV.trainSplit = 1 - percent;
-
-                trainText.setText(Double.toString(DV.trainSplit));
+                trainSpinner.setValue(DV.trainSplit); // Sync train spinner with test spinner
             }
-            else
-                testText.setText("INVALID");
         });
 
+        // Panels for train and test spinners
+        JPanel training = new JPanel();
+        JLabel trainSplit = new JLabel("Train Split");
+        training.add(trainSplit);
+        training.add(trainSpinner);
+
         JPanel testing = new JPanel();
+        JLabel testSplit = new JLabel("Test Split");
         testing.add(testSplit);
-        testing.add(testText);
+        testing.add(testSpinner);
 
         splitPanel.add(splitLabel);
         splitPanel.add(training);
@@ -967,7 +957,7 @@ public class DV extends JFrame
         checkBoxPanel.add(normPanel);
         checkBoxPanel.add(splitLabel);
         checkBoxPanel.add(splitPanel);
-        
+
         return checkBoxPanel;
     }
 

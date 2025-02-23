@@ -162,7 +162,7 @@ public class HyperBlock implements Serializable
                     for (int g = 0; g < maximums.get(k).size(); g++) {
 
                         // Check if the value is within the interval
-                        if (value >= minimums.get(k).get(g) && value <= maximums.get(k).get(g)) {
+                        if ((float) value >= minimums.get(k).get(g).floatValue() && (float) value <= maximums.get(k).get(g).floatValue()) {
                             inAnyInterval = true;
                             break;
                         }
@@ -205,6 +205,11 @@ public class HyperBlock implements Serializable
         // Go through all the points in the hyperblock
         for (double[] dbs : hyper_block.get(0))
         {
+            float[] testf = new float[dbs.length];
+            for(int i = 0; i < dbs.length; i++){
+                testf[i] = (float) dbs[i];
+            }
+
             for (int j = 0; j < DV.fieldLength; j++)
             {
                 // Update dimensional min or max if the value is < or >

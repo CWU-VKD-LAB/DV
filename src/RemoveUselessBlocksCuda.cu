@@ -1,5 +1,6 @@
+extern "C"
 
-__global__ void assignPointsToBlocks(double *dataPointsArray, int numAttributes, int numPoints, double *blockMins, double *blockMaxes, int *blockEdges, int numBlocks, int *dataPointBlocks, int *numPointsInBlocks){
+__global__ void removeBlocksHelper(float *dataPointsArray, int numAttributes, int numPoints, float *blockMins, float *blockMaxes, int *blockEdges, int numBlocks, int *dataPointBlocks, int *numPointsInBlocks){
 
     int threadId = blockIdx.x * blockDim.x + threadIdx.x;
     // early return here ok, because we'd never have more points than blocks. that would be a disaster.
@@ -7,7 +8,7 @@ __global__ void assignPointsToBlocks(double *dataPointsArray, int numAttributes,
         return;
 
     // our respective point to compute
-    double *thisThreadPoint = &dataPointsArray[threadId * numAttributes];
+    float *thisThreadPoint = &dataPointsArray[threadId * numAttributes];
 
     // the spot to put our number of which block this data point goes into
     int *dataPointBlock = &dataPointBlocks[threadId];
@@ -15,7 +16,7 @@ __global__ void assignPointsToBlocks(double *dataPointsArray, int numAttributes,
 
     int currentBlock = 0;
     int nextBlock = 1;
-    double *startOfBlockMins, *startOfBlockMaxes, *endOfBlock;
+    float *startOfBlockMins, *startOfBlockMaxes, *endOfBlock;
 
     // now we blast through all the blocks. checking which point this one falls into first
     while (currentBlock < numBlocks){
@@ -44,10 +45,10 @@ __global__ void assignPointsToBlocks(double *dataPointsArray, int numAttributes,
             bool inBounds = false;
             for(int i = 0; i < countOfThisAttribute; i++){
 
-                double min = *startOfBlockMins;
+                float min = *startOfBlockMins;
                 startOfBlockMins++;
 
-                double max = *startOfBlockMaxes;
+                float max = *startOfBlockMaxes;
                 startOfBlockMaxes++;
 
                 if(thisThreadPoint[particularAttribute] >= min && thisThreadPoint[particularAttribute] <= max){
@@ -119,10 +120,10 @@ __global__ void assignPointsToBlocks(double *dataPointsArray, int numAttributes,
                 bool inBounds = false;
                 for(int i = 0; i < countOfThisAttribute; i++){
 
-                    double min = *startOfBlockMins;
+                    float min = *startOfBlockMins;
                     startOfBlockMins++;
 
-                    double max = *startOfBlockMaxes;
+                    float max = *startOfBlockMaxes;
                     startOfBlockMaxes++;
 
                     if(thisThreadPoint[particularAttribute] >= min && thisThreadPoint[particularAttribute] <= max){
@@ -146,6 +147,7 @@ __global__ void assignPointsToBlocks(double *dataPointsArray, int numAttributes,
             nextBlock++;   
         }
     }
+
     // now we synchronize the threads one last time, and sum up all the amounts once more, since we want to parallelize this task.
     __syncthreads();
     if (threadId < numBlocks){
