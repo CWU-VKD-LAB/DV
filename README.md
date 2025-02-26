@@ -56,3 +56,7 @@ Please refer to the user manual for specifics on any of the information above.
 #### Breast Cancer Wisconsin benign (upper graph) vs malignant (lower graph)
 
 ![bcw](documentation/images/bcw.png)
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
