@@ -42,6 +42,12 @@ Please refer to the user manual for specifics on any of the information above.
 2. Build project
 3. Run
 
+### Generic build instructions
+
+1. Clone repository
+2. Run from root directory: `javac -cp "lib/*:src" src/*.java src/Sliders/*.java`
+3. Run from root directory: `java -cp "lib/*:src" Main`
+
 ### Dataset Links
 
 - [Iris dataset](https://archive.ics.uci.edu/ml/datasets/iris)
